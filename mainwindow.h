@@ -1,0 +1,106 @@
+#ifndef MAINWINDOW_H
+#define MAINWINDOW_H
+
+#include <QMainWindow>
+#include <QFileDialog>
+#include <QGraphicsScene>
+#include <QMouseEvent>
+#include <QThread>
+#include <vector>
+#include "proj_correction.h"
+#include "customview.h"
+#include "reconstruction_worker.h"
+#include "post_process_worker.h"
+#include "corr_scan_worker.h"
+QT_BEGIN_NAMESPACE
+namespace Ui { class MainWindow; }
+QT_END_NAMESPACE
+
+class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    MainWindow(QWidget *parent = nullptr);
+    ~MainWindow();
+    void openImage();
+    CustomView *customview;
+    QGraphicsScene *scene;
+
+    QString workingpath;
+    int angles, corr_projection, repeats, pixel_size, org_cols, org_rows,image_x, image_y;
+    float last_angle;
+
+public slots:
+    void slotFileOpen();
+    void slotGetROI();
+    void slotGetCorr();
+    void slot_First_Set();
+    void slot_corr_scan();
+    void slot_browse_angle_file();
+
+    void slot_add_cor_roi();
+    void slot_clear_cor_roi();
+    void slot_find_cor();
+    void slot_run_reconstruction();
+    void slot_run_preview();
+    void slot_show_preview_slice(int index);
+    void slot_run_post_process();
+
+private slots:
+    void slot_reco_progress(int percent, QString message);
+    void slot_reco_finished();
+    void slot_reco_failed(QString error);
+    void slot_preview_ready(cv::Mat bottom, cv::Mat mid, cv::Mat top, ReconstructionWorker::PreviewCache cache);
+    void slot_post_progress(int percent, QString message);
+    void slot_post_finished();
+    void slot_post_failed(QString error);
+    void slot_corr_scan_progress(int percent, QString message);
+    void slot_corr_scan_finished();
+    void slot_corr_scan_failed(QString error);
+
+private:
+    Ui::MainWindow *ui;
+    Proj_correction *first_set;
+    void update_view();
+    void correct_first_image();
+    QStringList steuerelemente;
+    QString first_image;
+    QImage scaledImage;
+    QRect rect_roi_final;
+
+    std::vector<cv::Rect> cor_rois;
+    double cor_offset = 0.0;
+    double tilt_deg = 0.0;
+
+    QThread *reco_thread = nullptr;
+    ReconstructionWorker *reco_worker = nullptr;
+    void set_reconstruction_controls_enabled(bool enabled);
+    int spot_kernel_size_from_ui() const;
+    ReconstructionWorker::Params buildReconstructionParams();
+
+    // Updates workingpath/settings.ini in place with the current reconstruction settings (ROI,
+    // binning, CoR/tilt, ring filters, FBP filter, circular mask) - called once corr/ or sino/
+    // finishes writing, so a later slotFileOpen() on the same settings.ini restores them. The
+    // original scan-metadata lines (angles=/last_angle=/etc., written by the acquisition software,
+    // never by this app) are preserved verbatim above a sentinel comment line; everything from that
+    // sentinel onward is this app's own section and is fully regenerated on each save.
+    void saveSettingsIni() const;
+
+    cv::Mat preview_slices[3]; // bottom, mid, top - cached so switching the combo doesn't recompute
+    QImage matToPreviewImage(const cv::Mat& slice) const;
+    void display_preview_slice(int index);
+    void refresh_preview_overlay(); // redraws whichever preview slice is showing, if any
+
+    // Sinograms built by the last preview run, reused across "Preview B/M/T" clicks whenever only
+    // CoR offset and/or ring-filter/FBP-filter settings changed - see ReconstructionWorker::PreviewCache.
+    ReconstructionWorker::PreviewCache preview_sino_cache;
+
+    QThread *post_thread = nullptr;
+    PostProcessWorker *post_worker = nullptr;
+    PostProcessWorker::Params buildPostProcessParams() const;
+
+    QThread *corr_scan_thread = nullptr;
+    CorrScanWorker *corr_scan_worker = nullptr;
+};
+#endif // MAINWINDOW_H

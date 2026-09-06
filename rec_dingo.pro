@@ -1,0 +1,83 @@
+QT       += core gui
+greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
+
+CONFIG += c++20
+
+CONFIG += link_pkgconfig
+PKGCONFIG += opencv4
+
+LIBS += -lfftw3f
+
+# You can make your code fail to compile if it uses deprecated APIs.
+# In order to do so, uncomment the following line.
+#DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
+
+SOURCES += \
+    customview.cpp \
+    main.cpp \
+    mainwindow.cpp \
+    proj_correction.cpp \
+    spot_filter.cpp \
+    tilt_correction.cpp \
+    rotation_axis.cpp \
+    sinogram_io.cpp \
+    fbp_reconstructor.cpp \
+    ring_filter.cpp \
+    ring_removal_polar.cpp \
+    reconstruction_worker.cpp \
+    post_process_worker.cpp \
+    angle_file_reader.cpp \
+    corr_scan_worker.cpp
+
+HEADERS += \
+    customview.h \
+    mainwindow.h \
+    proj_correction.h \
+    spot_filter.h \
+    tilt_correction.h \
+    rotation_axis.h \
+    sinogram_io.h \
+    fbp_reconstructor.h \
+    fbp_cuda_backend.h \
+    ring_filter.h \
+    ring_removal_polar.h \
+    ring_removal_polar_cuda.h \
+    reconstruction_worker.h \
+    post_process_worker.h \
+    beam_hardening.h \
+    angle_file_reader.h \
+    corr_scan_worker.h
+
+FORMS += \
+    mainwindow.ui
+
+# --- CUDA (reconstruction backprojection/ramp-filter kernels, optional GPU polar ring removal) ---
+# Quadro P2000 = Pascal, compute capability 6.1.
+CUDA_SOURCES += fbp_reconstructor_cuda.cu ring_removal_polar_cuda.cu
+CUDA_ARCH = sm_61
+
+# nvidia-cuda-toolkit's Ubuntu packaging installs nvcc onto PATH and
+# cufft.h/libcufft into the normal system include/lib directories, so no
+# extra -I/-L should be needed. If the build can't find cuda_runtime.h or
+# -lcufft, set CUDA_DIR below to wherever `dpkg -L nvidia-cuda-toolkit` shows
+# them and uncomment the INCLUDEPATH/QMAKE_LIBDIR lines.
+# CUDA_DIR = /usr/lib/nvidia-cuda-toolkit
+# INCLUDEPATH += $$CUDA_DIR/include
+# QMAKE_LIBDIR += $$CUDA_DIR/lib64
+
+LIBS += -lcudart -lcufft
+
+cuda.name = cuda ${QMAKE_FILE_IN}
+cuda.input = CUDA_SOURCES
+cuda.output = ${QMAKE_FILE_BASE}_cuda.o
+# ring_removal_polar_cuda.h (unlike fbp_cuda_backend.h) includes OpenCV directly (its API takes/
+# returns cv::Mat), so nvcc needs OpenCV's include path too - pkg-config gives the same path g++
+# gets via PKGCONFIG above.
+cuda.commands = nvcc -std=c++17 -O2 -arch=$$CUDA_ARCH $$system(pkg-config --cflags opencv4) -c ${QMAKE_FILE_NAME} -o ${QMAKE_FILE_OUT}
+cuda.variable_out = OBJECTS
+QMAKE_EXTRA_COMPILERS += cuda
+
+# Default rules for deployment.
+qnx: target.path = /tmp/$${TARGET}/bin
+else: unix:!android: target.path = /opt/$${TARGET}/bin
+!isEmpty(target.path): INSTALLS += target

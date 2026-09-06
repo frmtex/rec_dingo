@@ -1,0 +1,25 @@
+# Build output
+build/
+*.o
+*.obj
+Makefile
+Makefile.*
+moc_*.cpp
+moc_*.h
+ui_*.h
+qrc_*.cpp
+*.so
+*.so.*
+*.a
+
+# Qt Creator user-specific project state (machine/kit-specific, not meant to be shared)
+*.pro.user
+*.pro.user.*
+.qtcreator/
+
+# macOS AppleDouble metadata (leftover from copying off a non-HFS filesystem)
+._*
+.DS_Store
+
+# Claude Code local settings (environment-specific)
+.claude/
