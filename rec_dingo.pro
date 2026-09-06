@@ -8,52 +8,54 @@ PKGCONFIG += opencv4
 
 LIBS += -lfftw3f
 
+INCLUDEPATH += $$PWD/include
+
 # You can make your code fail to compile if it uses deprecated APIs.
 # In order to do so, uncomment the following line.
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
-    customview.cpp \
-    main.cpp \
-    mainwindow.cpp \
-    proj_correction.cpp \
-    spot_filter.cpp \
-    tilt_correction.cpp \
-    rotation_axis.cpp \
-    sinogram_io.cpp \
-    fbp_reconstructor.cpp \
-    ring_filter.cpp \
-    ring_removal_polar.cpp \
-    reconstruction_worker.cpp \
-    post_process_worker.cpp \
-    angle_file_reader.cpp \
-    corr_scan_worker.cpp
+    src/customview.cpp \
+    src/main.cpp \
+    src/mainwindow.cpp \
+    src/proj_correction.cpp \
+    src/spot_filter.cpp \
+    src/tilt_correction.cpp \
+    src/rotation_axis.cpp \
+    src/sinogram_io.cpp \
+    src/fbp_reconstructor.cpp \
+    src/ring_filter.cpp \
+    src/ring_removal_polar.cpp \
+    src/reconstruction_worker.cpp \
+    src/post_process_worker.cpp \
+    src/angle_file_reader.cpp \
+    src/corr_scan_worker.cpp
 
 HEADERS += \
-    customview.h \
-    mainwindow.h \
-    proj_correction.h \
-    spot_filter.h \
-    tilt_correction.h \
-    rotation_axis.h \
-    sinogram_io.h \
-    fbp_reconstructor.h \
-    fbp_cuda_backend.h \
-    ring_filter.h \
-    ring_removal_polar.h \
-    ring_removal_polar_cuda.h \
-    reconstruction_worker.h \
-    post_process_worker.h \
-    beam_hardening.h \
-    angle_file_reader.h \
-    corr_scan_worker.h
+    include/customview.h \
+    include/mainwindow.h \
+    include/proj_correction.h \
+    include/spot_filter.h \
+    include/tilt_correction.h \
+    include/rotation_axis.h \
+    include/sinogram_io.h \
+    include/fbp_reconstructor.h \
+    include/fbp_cuda_backend.h \
+    include/ring_filter.h \
+    include/ring_removal_polar.h \
+    include/ring_removal_polar_cuda.h \
+    include/reconstruction_worker.h \
+    include/post_process_worker.h \
+    include/beam_hardening.h \
+    include/angle_file_reader.h \
+    include/corr_scan_worker.h
 
 FORMS += \
-    mainwindow.ui
+    forms/mainwindow.ui
 
 # --- CUDA (reconstruction backprojection/ramp-filter kernels, optional GPU polar ring removal) ---
 # Quadro P2000 = Pascal, compute capability 6.1.
-CUDA_SOURCES += fbp_reconstructor_cuda.cu ring_removal_polar_cuda.cu
+CUDA_SOURCES += src/fbp_reconstructor_cuda.cu src/ring_removal_polar_cuda.cu
 CUDA_ARCH = sm_61
 
 # nvidia-cuda-toolkit's Ubuntu packaging installs nvcc onto PATH and
@@ -72,8 +74,9 @@ cuda.input = CUDA_SOURCES
 cuda.output = ${QMAKE_FILE_BASE}_cuda.o
 # ring_removal_polar_cuda.h (unlike fbp_cuda_backend.h) includes OpenCV directly (its API takes/
 # returns cv::Mat), so nvcc needs OpenCV's include path too - pkg-config gives the same path g++
-# gets via PKGCONFIG above.
-cuda.commands = nvcc -std=c++17 -O2 -arch=$$CUDA_ARCH $$system(pkg-config --cflags opencv4) -c ${QMAKE_FILE_NAME} -o ${QMAKE_FILE_OUT}
+# gets via PKGCONFIG above. Both .cu files quote-include their own header from include/, so that
+# needs to be on nvcc's path too, same as INCLUDEPATH above does for g++.
+cuda.commands = nvcc -std=c++17 -O2 -arch=$$CUDA_ARCH -I$$PWD/include $$system(pkg-config --cflags opencv4) -c ${QMAKE_FILE_NAME} -o ${QMAKE_FILE_OUT}
 cuda.variable_out = OBJECTS
 QMAKE_EXTRA_COMPILERS += cuda
 
