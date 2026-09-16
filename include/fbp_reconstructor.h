@@ -20,15 +20,22 @@ enum class FbpFilterType
     Hann
 };
 
+#if defined(__APPLE__)
+class FbpAccelerateBackend;
+#else
 class FbpCudaBackend;
+#endif
 
 // Filtered backprojection (selectable apodization window on the ramp filter)
 // for parallel-beam tomography, plus a Fourier-shift helper to move a
 // sinogram onto the rotation axis before reconstruction. The ramp filter and
-// backprojection both run on the GPU via FbpCudaBackend (cuFFT + CUDA
-// kernels); the batched FFT plan and device scratch buffers it holds are
-// created once and reused across every sinogram/slice passed through this
-// instance.
+// backprojection run on whichever backend this platform builds: on Linux,
+// FbpCudaBackend (cuFFT + CUDA kernels); on macOS, FbpAccelerateBackend
+// (Accelerate/vDSP). Either way, the backend's cached FFT plan and scratch
+// buffers are created once and reused across every sinogram/slice passed
+// through this instance - this class itself holds no platform-specific state,
+// just the shared filter-construction math and a pointer to whichever
+// backend fbp_reconstructor.cpp was compiled against.
 class FbpReconstructor
 {
 public:
@@ -53,7 +60,11 @@ public:
 private:
     int n_detectors_;
     int filter_size_;                 // next power of two >= 2*n_detectors_
-    std::unique_ptr<FbpCudaBackend> cuda_;
+#if defined(__APPLE__)
+    std::unique_ptr<FbpAccelerateBackend> backend_;
+#else
+    std::unique_ptr<FbpCudaBackend> backend_;
+#endif
 };
 
 #endif // FBP_RECONSTRUCTOR_H

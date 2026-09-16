@@ -1,5 +1,9 @@
 #include "fbp_reconstructor.h"
+#if defined(__APPLE__)
+#include "fbp_accelerate_backend.h"
+#else
 #include "fbp_cuda_backend.h"
+#endif
 #include <cmath>
 #include <stdexcept>
 
@@ -66,7 +70,11 @@ FbpReconstructor::FbpReconstructor(int n_detectors, FbpFilterType filterType)
         filter[k] = static_cast<float>(ramp * window / N);
     }
 
-    cuda_ = std::make_unique<FbpCudaBackend>(n_detectors_, filter_size_, filter);
+#if defined(__APPLE__)
+    backend_ = std::make_unique<FbpAccelerateBackend>(n_detectors_, filter_size_, filter);
+#else
+    backend_ = std::make_unique<FbpCudaBackend>(n_detectors_, filter_size_, filter);
+#endif
 }
 
 FbpReconstructor::~FbpReconstructor() = default;
@@ -79,7 +87,7 @@ void FbpReconstructor::shift_sinogram(cv::Mat& sinogram, double shift) const
     CV_Assert(sinogram.type() == CV_32FC1);
     CV_Assert(sinogram.cols == n_detectors_);
 
-    cuda_->shiftSinogram(sinogram.ptr<float>(0), sinogram.rows, sinogram.step, shift);
+    backend_->shiftSinogram(sinogram.ptr<float>(0), sinogram.rows, sinogram.step, shift);
 }
 
 cv::Mat FbpReconstructor::reconstruct_slice(const cv::Mat& sinogram, const std::vector<double>& angles_rad,
@@ -92,7 +100,7 @@ cv::Mat FbpReconstructor::reconstruct_slice(const cv::Mat& sinogram, const std::
         throw std::invalid_argument("FbpReconstructor::reconstruct_slice: angles_rad size mismatch");
 
     cv::Mat recon(n_detectors_, n_detectors_, CV_32FC1);
-    cuda_->reconstructSlice(sinogram.ptr<float>(0), n_angles, sinogram.step, angles_rad,
-                             circ_mask_ratio, recon.ptr<float>(0));
+    backend_->reconstructSlice(sinogram.ptr<float>(0), n_angles, sinogram.step, angles_rad,
+                                circ_mask_ratio, recon.ptr<float>(0));
     return recon;
 }

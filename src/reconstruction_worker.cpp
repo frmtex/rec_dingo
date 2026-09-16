@@ -4,7 +4,9 @@
 #include "fbp_reconstructor.h"
 #include "ring_filter.h"
 #include "ring_removal_polar.h"
+#if !defined(__APPLE__)
 #include "ring_removal_polar_cuda.h"
+#endif
 #include <filesystem>
 #include <algorithm>
 #include <array>
@@ -135,6 +137,7 @@ void ReconstructionWorker::run()
             && params_.ringMaskOuterRadius > 0)
             polarRingMaskRatio = params_.ringMaskOuterRadius / (n_cols / 2.0);
 
+#if !defined(__APPLE__)
         // reconstruct_slice() always produces a square n_cols x n_cols slice, so that's the fixed
         // size to construct the GPU backend's cached buffers for. Constructed once here (like fbp
         // above) and shared across the row pool below - PolarRingCudaBackend serializes its own
@@ -142,6 +145,7 @@ void ReconstructionWorker::run()
         std::unique_ptr<PolarRingCudaBackend> polarRingGpu;
         if (params_.polarRingEnabled && params_.polarRingUseGpu)
             polarRingGpu = std::make_unique<PolarRingCudaBackend>(n_cols, n_cols, polarRingMaskRatio);
+#endif
 
         QString recoDir = params_.workingPath + "/reco/";
         fs::create_directories(recoDir.toStdString());
@@ -188,12 +192,18 @@ void ReconstructionWorker::run()
                     // machine (the same bug already fixed once in post_process_worker.cpp). The
                     // GPU path needs no such flag - PolarRingCudaBackend serializes itself.
                     if (params_.polarRingEnabled) {
+#if !defined(__APPLE__)
                         if (polarRingGpu) {
                             slice = polarRingGpu->remove_ring(slice, params_.polarRingThresh,
                                                                params_.polarRingThreshMax, params_.polarRingThreshMin,
                                                                params_.polarRingThetaMinDeg, params_.polarRingWidth,
                                                                params_.polarRingWrapBoundary);
-                        } else {
+                        } else
+#endif
+                        {
+                            // macOS has no CUDA polar-ring backend (see the __APPLE__ guards above
+                            // and in the includes/PolarRingCudaBackend construction) - always the
+                            // CPU path there, regardless of params_.polarRingUseGpu.
                             slice = PolarRingRemoval::remove_ring(slice, params_.polarRingThresh,
                                                                    params_.polarRingThreshMax, params_.polarRingThreshMin,
                                                                    params_.polarRingThetaMinDeg, params_.polarRingWidth,

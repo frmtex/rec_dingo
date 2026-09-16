@@ -31,6 +31,14 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
+#if defined(__APPLE__)
+    // No CUDA polar-ring backend on macOS (see reconstruction_worker.cpp's __APPLE__ guards) -
+    // that path always runs on the CPU there, so disable the checkbox rather than let it look
+    // like a live option that silently does nothing.
+    ui->checkBox_ringUseGpu->setChecked(false);
+    ui->checkBox_ringUseGpu->setEnabled(false);
+#endif
+
     connect(ui->pushButton_ini, SIGNAL(clicked()), this, SLOT(slotFileOpen()));
     connect(ui->pushButton_roi, SIGNAL(clicked()), this, SLOT(slotGetROI()));
     connect(ui->pushButton_corr, SIGNAL(clicked()), this, SLOT(slotGetCorr()));
@@ -213,7 +221,9 @@ void MainWindow::slotFileOpen()
         ui->spinBox_ringThetaMin->setValue(getInt("polar_ring_theta_min", 30));
         ui->spinBox_ringWidth->setValue(getInt("polar_ring_width", 30));
         ui->comboBox_ringBoundaryMode->setCurrentIndex(getBool("polar_ring_wrap", true) ? 0 : 1);
+#if !defined(__APPLE__)
         ui->checkBox_ringUseGpu->setChecked(getBool("polar_ring_use_gpu", false));
+#endif
 
         ui->comboBox_fbpFilter->setCurrentIndex(getInt("fbp_filter", 3));
         ui->doubleSpinBox_circMask->setValue(getDouble("circ_mask_ratio", 0.99));
