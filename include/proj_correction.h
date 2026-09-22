@@ -48,6 +48,11 @@ public:
     // Reads back projection `index` from <data_path>/corr/, already flat-field + phase-retrieval
     // corrected by run_scan() (CV_32FC1, no further correction applied).
     cv::Mat get_projection_from_corr(int index);
+    // Same result run_scan() writes to <data_path>/corr/ for this index (spot filter + flat field
+    // + intensity correction + phase retrieval), computed directly from scan/ without touching
+    // corr/ at all - shared by run_scan() (which writes it) and any in-memory caller that wants
+    // the fully corrected projection without a disk round-trip.
+    cv::Mat get_projection_corrected_full(int index);
 
     cv::Mat  im_show;
 

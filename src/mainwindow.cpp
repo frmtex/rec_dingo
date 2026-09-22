@@ -42,6 +42,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->pushButton_clearRoi, SIGNAL(clicked()), this, SLOT(slot_clear_cor_roi()));
     connect(ui->pushButton_findCor, SIGNAL(clicked()), this, SLOT(slot_find_cor()));
     connect(ui->pushButton_runReco, SIGNAL(clicked()), this, SLOT(slot_run_reconstruction()));
+    connect(ui->pushButton_runInMemory, SIGNAL(clicked()), this, SLOT(slot_run_inmemory()));
 
     connect(ui->pushButton_preview, SIGNAL(clicked()), this, SLOT(slot_run_preview()));
     connect(ui->comboBox_previewSlice, SIGNAL(currentIndexChanged(int)), this, SLOT(slot_show_preview_slice(int)));
@@ -371,7 +372,7 @@ void MainWindow::slot_corr_scan()
         statusBar()->showMessage(tr("Load first set before correcting the scan"), 3000);
         return;
     }
-    if (reco_thread || post_thread || corr_scan_thread) {
+    if (reco_thread || post_thread || corr_scan_thread || inmemory_thread) {
         statusBar()->showMessage(tr("Another operation is already running"), 3000);
         return;
     }
@@ -646,7 +647,7 @@ void MainWindow::slot_run_reconstruction()
         statusBar()->showMessage(tr("Load first set before running the reconstruction"), 3000);
         return;
     }
-    if (reco_thread || post_thread || corr_scan_thread) {
+    if (reco_thread || post_thread || corr_scan_thread || inmemory_thread) {
         statusBar()->showMessage(tr("A reconstruction, preview, or post-processing run is already in progress"), 3000);
         return;
     }
@@ -681,6 +682,51 @@ void MainWindow::slot_run_reconstruction()
     reco_thread->start();
 }
 
+void MainWindow::slot_run_inmemory()
+{
+    if (!first_set) {
+        statusBar()->showMessage(tr("Load first set before running the in-memory pipeline"), 3000);
+        return;
+    }
+    if (reco_thread || post_thread || corr_scan_thread || inmemory_thread) {
+        statusBar()->showMessage(tr("A reconstruction, preview, or post-processing run is already in progress"), 3000);
+        return;
+    }
+    if (ui->comboBox_startStage->currentIndex() == 2) {
+        statusBar()->showMessage(
+            tr("In-memory pipeline has no on-disk sinograms to resume from - pick Raw scan or Corrected projections"),
+            5000);
+        return;
+    }
+
+    preview_sino_cache = ReconstructionWorker::PreviewCache();
+
+    ReconstructionWorker::Params params = buildReconstructionParams();
+
+    set_reconstruction_controls_enabled(false);
+    ui->progressBar_reco->setValue(0);
+    ui->label_reco_status->setText(tr("Starting (in-memory)..."));
+
+    inmemory_thread = new QThread(this);
+    inmemory_worker = new InMemoryPipelineWorker(first_set, params);
+    inmemory_worker->moveToThread(inmemory_thread);
+
+    connect(inmemory_thread, &QThread::started, inmemory_worker, &InMemoryPipelineWorker::run);
+    connect(inmemory_worker, &InMemoryPipelineWorker::progress, this, &MainWindow::slot_reco_progress);
+    connect(inmemory_worker, &InMemoryPipelineWorker::finished, this, &MainWindow::slot_reco_finished);
+    connect(inmemory_worker, &InMemoryPipelineWorker::failed, this, &MainWindow::slot_reco_failed);
+    connect(inmemory_worker, &InMemoryPipelineWorker::finished, inmemory_thread, &QThread::quit);
+    connect(inmemory_worker, &InMemoryPipelineWorker::failed, inmemory_thread, &QThread::quit);
+    connect(inmemory_thread, &QThread::finished, inmemory_worker, &QObject::deleteLater);
+    connect(inmemory_thread, &QThread::finished, inmemory_thread, &QObject::deleteLater);
+    connect(inmemory_thread, &QThread::finished, this, [this]() {
+        inmemory_thread = nullptr;
+        inmemory_worker = nullptr;
+    });
+
+    inmemory_thread->start();
+}
+
 void MainWindow::slot_reco_progress(int percent, QString message)
 {
     ui->progressBar_reco->setValue(percent);
@@ -704,6 +750,7 @@ void MainWindow::slot_reco_failed(QString error)
 void MainWindow::set_reconstruction_controls_enabled(bool enabled)
 {
     ui->pushButton_runReco->setEnabled(enabled);
+    ui->pushButton_runInMemory->setEnabled(enabled);
     ui->pushButton_findCor->setEnabled(enabled);
     ui->pushButton_addRoi->setEnabled(enabled);
     ui->pushButton_clearRoi->setEnabled(enabled);
@@ -716,7 +763,7 @@ void MainWindow::slot_run_preview()
         statusBar()->showMessage(tr("Load first set before previewing"), 3000);
         return;
     }
-    if (reco_thread || post_thread || corr_scan_thread) {
+    if (reco_thread || post_thread || corr_scan_thread || inmemory_thread) {
         statusBar()->showMessage(tr("A reconstruction, preview, or post-processing run is already in progress"), 3000);
         return;
     }
@@ -893,7 +940,7 @@ void MainWindow::slot_run_post_process()
         statusBar()->showMessage(tr("Load a dataset before running post-processing"), 3000);
         return;
     }
-    if (reco_thread || post_thread || corr_scan_thread) {
+    if (reco_thread || post_thread || corr_scan_thread || inmemory_thread) {
         statusBar()->showMessage(tr("A reconstruction, preview, or post-processing run is already in progress"), 3000);
         return;
     }

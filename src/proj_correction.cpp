@@ -277,6 +277,70 @@ void Proj_correction::get_first_image_corr(){
 
 };
 
+cv::Mat Proj_correction::get_projection_corrected_full(int index)
+{
+    QString proj_path = data_path + "/scan/";
+    QDir proj_dir = proj_path;
+    QStringList proj_list = proj_dir.entryList(QDir::Files | QDir::NoDotAndDotDot);
+
+    int x, y, h, w;
+    roi_rect.getRect(&x, &y, &w, &h);
+    cv::Rect roi(x, y, w, h); // full-resolution crop rect; read_cropped_binned bins after cropping
+    if (binning > 1) { w /= binning; h /= binning; } // padding/reshape math below works in binned size
+
+    QString filename = proj_path + proj_list.at(index);
+    cv::Mat img_roi = read_cropped_binned(filename, roi);
+    applySpotCorrection(img_roi, spot_kernel_size, 200);
+
+    cv::Mat im_out;
+    img_roi.convertTo(im_out, CV_32FC1);
+    im_out = (im_out - di_corr) / (ob_corr - di_corr);
+
+    // Beam-intensity fluctuation correction - see get_projection_corr() for details; kept in
+    // sync with it so this matches what get_projection_corr() would return for the same index.
+    if (intensity_roi_enabled) {
+        double current = roi_mean(im_out);
+        if (current > 0.0)
+            im_out *= (intensity_reference / current);
+    }
+
+    int w_new = static_cast<int>(log2(w)) + 1;
+    int w_f = static_cast<int>(std::pow(2, w_new));
+    int h_new = static_cast<int>(log2(h)) + 1;
+    int h_f = static_cast<int>(std::pow(2, h_new));
+
+    int pad_left, pad_right, pad_top, pad_bottom;
+    if (w % 2 == 0) {
+        pad_left = abs((w_f - w) / 2);
+        pad_right = abs((w_f - w) / 2);
+    } else {
+        pad_left = abs((w_f - w) / 2);
+        pad_right = abs((w_f - w) / 2 + 1);
+    }
+    if (h % 2 == 0) {
+        pad_top = abs((h_f - h) / 2);
+        pad_bottom = abs((h_f - h) / 2);
+    } else {
+        pad_top = abs((h_f - h) / 2);
+        pad_bottom = abs((h_f - h) / 2 + 1);
+    }
+
+    cv::copyMakeBorder(im_out, im_out, pad_top, pad_bottom, pad_left, pad_right, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
+    im_out = im_out.reshape(1, 1);
+
+    std::vector<float> im_test;
+    im_out.copyTo(im_test);
+
+    std::vector<float> im_out_new = applyPhaseRetrieval(im_test, h_f, w_f, 1.0, 1.0);
+
+    cv::Rect cropRoi(pad_left, pad_top, w, h);
+    // im_out_pad is a view into the local im_out_new vector - clone before it goes out of scope
+    // (the original inline code got away without cloning since it wrote the file immediately in
+    // the same scope; returning the Mat from a function requires an owned copy).
+    cv::Mat im_out_pad(h_f, w_f, CV_32FC1, im_out_new.data());
+    return im_out_pad(cropRoi).clone();
+}
+
 void Proj_correction::run_scan(const std::function<void(int, int)>& progressCallback){
 
     QString proj_path = data_path + "/scan/";
@@ -286,78 +350,11 @@ void Proj_correction::run_scan(const std::function<void(int, int)>& progressCall
 
     QDir proj_dir = proj_path;
     QStringList proj_list =  proj_dir.entryList(QDir::Files | QDir::NoDotAndDotDot);
-    int x,y,h,w;
-    roi_rect.getRect(&x,&y,&w,&h);
-    cv::Rect roi(x,y,w,h); // full-resolution crop rect; read_cropped_binned bins after cropping
-    if (binning > 1) { w /= binning; h /= binning; } // padding/reshape math below works in binned size
-    cv::Mat im_out;
 
-    int kernel_size = spot_kernel_size;
-    int pad_top, pad_bottom, pad_left, pad_right,w_new, h_new, h_f, w_f;
-
-
-     for (int i = 0; i < proj_list.size(); ++i) {
-        QString filename = proj_path + proj_list.at(i);
-        cv::Mat img_roi = read_cropped_binned(filename, roi);
-        applySpotCorrection(img_roi, kernel_size, 200);
-
-        img_roi.convertTo(im_out, CV_32FC1);
-
-        im_out = (im_out - di_corr)/(ob_corr-di_corr);
-
-        // Beam-intensity fluctuation correction - see get_projection_corr() for details; kept in
-        // sync with it so run_scan()'s corr/ output matches what get_projection_corr() would
-        // return for the same index.
-        if (intensity_roi_enabled) {
-            double current = roi_mean(im_out);
-            if (current > 0.0)
-                im_out *= (intensity_reference / current);
-        }
-
-        w_new = log2(w);
-        w_new++;
-        w_f = std::pow(2, w_new);
-        h_new = log2(h);
-        h_new++;
-        h_f = std::pow(2, h_new);
-
-
-        if (w % 2 == 0){
-            pad_left = abs((w_f-w)/2);
-            pad_right = abs((w_f-w)/2);
-        } else {
-            pad_left = abs((w_f-w)/2);
-            pad_right = abs((w_f-w)/2 + 1);
-        }
-
-        if (h % 2 == 0){
-            pad_top = abs((h_f-h)/2);
-            pad_bottom = abs((h_f-h)/2);
-        } else {
-            pad_top = abs((h_f-h)/2);
-            pad_bottom = abs((h_f-h)/2 + 1);
-        }
-
-
-        cv::copyMakeBorder(im_out, im_out, pad_top, pad_bottom, pad_left, pad_right, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
-
-        im_out = im_out.reshape(1, 1);
-
-        std::vector<float> im_test;
-        im_out.copyTo(im_test);
-
-
-        std::vector<float> im_out_new = applyPhaseRetrieval(im_test, h_f, w_f, 1.0, 1.0);
-
-        cv::Rect roi(pad_left, pad_top, w, h);
-
-        // Crop the padding out (shallow copy)
-        cv::Mat im_out_pad(h_f,w_f,CV_32FC1,im_out_new.data());
-        cv::Mat im_out_final = im_out_pad(roi);
+    for (int i = 0; i < proj_list.size(); ++i) {
+        cv::Mat im_out_final = get_projection_corrected_full(i);
 
         QString filename_out = proj_out + proj_list.at(i);
-
-        //im_out_final.convertTo(im_show, CV_16UC1, 65000);
         cv::imwrite(filename_out.toStdString(), im_out_final);
 
         if (progressCallback)
