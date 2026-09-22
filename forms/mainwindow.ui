@@ -1160,8 +1160,8 @@
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>340</y>
-        <width>260</width>
+        <y>315</y>
+        <width>150</width>
         <height>24</height>
        </rect>
       </property>
@@ -1169,7 +1169,7 @@
        <string>Runs scan -&gt; corrected projections -&gt; sinograms -&gt; reconstruction as one continuous in-memory pass, without writing corr/ or sino/ to disk - for large-RAM machines where that disk round-trip is pure overhead. reco/ is still written as usual. Requires Start From = Raw scan or Corrected projections (there's nothing on disk to resume from otherwise).</string>
       </property>
       <property name="text">
-       <string>Run In-Memory (no intermediate disk)</string>
+       <string>Run In-Memory</string>
       </property>
      </widget>
      <widget class="QLabel" name="label_fbpFilter">
