@@ -19,7 +19,13 @@ SinogramWriter::SinogramWriter(QString sinoDir, int n_cols)
 void SinogramWriter::beginChunk(int rowStart, int numRows, int n_angles)
 {
     rowStart_ = rowStart;
-    sinograms_.assign(numRows, cv::Mat::zeros(n_angles, n_cols_, CV_32FC1));
+    // cv::Mat's copy constructor is shallow (shared, refcounted data), so
+    // vector::assign(numRows, someMat) would give every element the SAME
+    // underlying buffer - each row needs its own cv::Mat::zeros() call.
+    sinograms_.clear();
+    sinograms_.reserve(numRows);
+    for (int r = 0; r < numRows; ++r)
+        sinograms_.push_back(cv::Mat::zeros(n_angles, n_cols_, CV_32FC1));
 }
 
 void SinogramWriter::addProjectionRows(int angleIndex, const cv::Mat& rowsBlock)
