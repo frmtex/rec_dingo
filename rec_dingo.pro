@@ -44,6 +44,8 @@ HEADERS += \
     include/ring_filter.h \
     include/ring_removal_polar.h \
     include/ring_removal_polar_cuda.h \
+    include/spot_filter_cuda.h \
+    include/phase_retrieval_cuda.h \
     include/reconstruction_worker.h \
     include/post_process_worker.h \
     include/beam_hardening.h \
@@ -53,9 +55,11 @@ HEADERS += \
 FORMS += \
     forms/mainwindow.ui
 
-# --- CUDA (reconstruction backprojection/ramp-filter kernels, optional GPU polar ring removal) ---
+# --- CUDA (reconstruction backprojection/ramp-filter kernels, optional GPU polar ring removal,
+# optional GPU spot filter/phase retrieval) ---
 # Quadro P2000 = Pascal, compute capability 6.1.
-CUDA_SOURCES += src/fbp_reconstructor_cuda.cu src/ring_removal_polar_cuda.cu
+CUDA_SOURCES += src/fbp_reconstructor_cuda.cu src/ring_removal_polar_cuda.cu \
+    src/spot_filter_cuda.cu src/phase_retrieval_cuda.cu
 CUDA_ARCH = sm_61
 
 # nvidia-cuda-toolkit's Ubuntu packaging installs nvcc onto PATH and

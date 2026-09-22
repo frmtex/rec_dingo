@@ -359,6 +359,22 @@
        </property>
       </item>
      </widget>
+     <widget class="QCheckBox" name="checkBox_useGpuProjCorrection">
+      <property name="geometry">
+       <rect>
+        <x>450</x>
+        <y>250</y>
+        <width>220</width>
+        <height>20</height>
+       </rect>
+      </property>
+      <property name="toolTip">
+       <string>Runs spot (hot/dead pixel) filtering and phase-contrast retrieval on the GPU instead of the CPU. Doesn't affect reconstruction, which already has its own GPU option.</string>
+      </property>
+      <property name="text">
+       <string>Use GPU for spot/phase correction</string>
+      </property>
+     </widget>
      <widget class="QCheckBox" name="checkBox_useAngleFile">
       <property name="geometry">
        <rect>

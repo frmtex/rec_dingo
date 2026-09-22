@@ -93,6 +93,33 @@ std::vector<float> phase_retrieval(const std::vector<float>& image,
 
 namespace fs = std::filesystem;
 
+void Proj_correction::applySpotCorrection(cv::Mat& img, int kernel_size, int threshold)
+{
+    if (!use_gpu) {
+        Spot_filter::spot_correction(img, kernel_size, threshold);
+        return;
+    }
+    if (!spot_filter_gpu || img.rows != spot_filter_gpu_rows || img.cols != spot_filter_gpu_cols) {
+        spot_filter_gpu = std::make_unique<SpotFilterCudaBackend>(img.rows, img.cols);
+        spot_filter_gpu_rows = img.rows;
+        spot_filter_gpu_cols = img.cols;
+    }
+    spot_filter_gpu->spot_correction(img, kernel_size, threshold);
+}
+
+std::vector<float> Proj_correction::applyPhaseRetrieval(const std::vector<float>& image, int nx, int ny,
+                                                          float alpha, float pix)
+{
+    if (!use_gpu)
+        return phase_retrieval(image, nx, ny, alpha, pix);
+    if (!phase_retrieval_gpu || nx != phase_retrieval_gpu_nx || ny != phase_retrieval_gpu_ny) {
+        phase_retrieval_gpu = std::make_unique<PhaseRetrievalCudaBackend>(nx, ny);
+        phase_retrieval_gpu_nx = nx;
+        phase_retrieval_gpu_ny = ny;
+    }
+    return phase_retrieval_gpu->retrieve(image, alpha, pix);
+}
+
 cv::Mat Proj_correction::read_cropped_binned(const QString& filename, const cv::Rect& fullResRoi) const
 {
     cv::Mat img_1 = cv::imread(filename.toStdString(), cv::IMREAD_UNCHANGED);
@@ -122,7 +149,7 @@ void Proj_correction::load_op_di()
         QString filename = ob_path + ob_list.at(i);
 
         cv::Mat img_roi = read_cropped_binned(filename, roi);
-        Spot_filter::spot_correction(img_roi, kernel_size, 200);
+        applySpotCorrection(img_roi, kernel_size, 200);
         images.push_back(img_roi);
 
     }
@@ -149,7 +176,7 @@ void Proj_correction::load_op_di()
         QString filename = di_path + di_list.at(i);
 
         cv::Mat img_roi = read_cropped_binned(filename, roi);
-        Spot_filter::spot_correction(img_roi, kernel_size, 100);
+        applySpotCorrection(img_roi, kernel_size, 100);
         images.push_back(img_roi);
 
     }
@@ -213,7 +240,7 @@ cv::Mat Proj_correction::get_projection_corr(int index)
 
     QString filename = proj_path + proj_list.at(index);
     cv::Mat img_roi = read_cropped_binned(filename, roi);
-    Spot_filter::spot_correction(img_roi, kernel_size, 200);
+    applySpotCorrection(img_roi, kernel_size, 200);
 
     cv::Mat im_out;
     img_roi.convertTo(im_out, CV_32FC1);
@@ -272,7 +299,7 @@ void Proj_correction::run_scan(const std::function<void(int, int)>& progressCall
      for (int i = 0; i < proj_list.size(); ++i) {
         QString filename = proj_path + proj_list.at(i);
         cv::Mat img_roi = read_cropped_binned(filename, roi);
-        Spot_filter::spot_correction(img_roi, kernel_size, 200);
+        applySpotCorrection(img_roi, kernel_size, 200);
 
         img_roi.convertTo(im_out, CV_32FC1);
 
@@ -320,7 +347,7 @@ void Proj_correction::run_scan(const std::function<void(int, int)>& progressCall
         im_out.copyTo(im_test);
 
 
-        std::vector<float> im_out_new = phase_retrieval(im_test, h_f, w_f, 1.0, 1.0);
+        std::vector<float> im_out_new = applyPhaseRetrieval(im_test, h_f, w_f, 1.0, 1.0);
 
         cv::Rect roi(pad_left, pad_top, w, h);
 

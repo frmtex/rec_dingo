@@ -4,6 +4,9 @@
 #include <QFileDialog>
 #include <opencv2/opencv.hpp>
 #include <functional>
+#include <memory>
+#include "spot_filter_cuda.h"
+#include "phase_retrieval_cuda.h"
 
 class Proj_correction
 {
@@ -22,6 +25,11 @@ public:
     // read and cropped to the ROI - before spot filtering, flat-fielding, or phase retrieval - so
     // every later step in this class runs on the smaller image too.
     void setBinning(int b) { binning = b; }
+    // Runs spot filtering and phase retrieval on the GPU (SpotFilterCudaBackend/
+    // PhaseRetrievalCudaBackend) instead of the CPU (Spot_filter/phase_retrieval) - see
+    // applySpotCorrection/applyPhaseRetrieval. The GPU backends are (re)built lazily, on first use
+    // or whenever the image size changes.
+    void setUseGpu(bool useGpu) { use_gpu = useGpu; }
     // Region of the corrected (cropped/binned) image containing only the primary beam, no sample -
     // used to correct for beam-intensity fluctuation over the course of a scan. Immediately reads
     // and corrects projection 0 to establish the reference mean; every projection returned by
@@ -61,6 +69,20 @@ private:
     // (fullResRoi.width/binning, fullResRoi.height/binning). fullResRoi is always in the
     // original, unbinned image's coordinates.
     cv::Mat read_cropped_binned(const QString& filename, const cv::Rect& fullResRoi) const;
+
+    bool use_gpu = false;
+    std::unique_ptr<SpotFilterCudaBackend> spot_filter_gpu;
+    int spot_filter_gpu_rows = 0, spot_filter_gpu_cols = 0;
+    std::unique_ptr<PhaseRetrievalCudaBackend> phase_retrieval_gpu;
+    int phase_retrieval_gpu_nx = 0, phase_retrieval_gpu_ny = 0;
+
+    // Dispatches to Spot_filter::spot_correction (CPU) or spot_filter_gpu (GPU, rebuilt if img's
+    // size doesn't match the cached backend) depending on use_gpu. Same call sites as before just
+    // route through here instead of calling Spot_filter::spot_correction directly.
+    void applySpotCorrection(cv::Mat& img, int kernel_size, int threshold);
+    // Dispatches to the free function phase_retrieval() (CPU) or phase_retrieval_gpu (GPU, rebuilt
+    // if nx/ny don't match the cached backend) depending on use_gpu.
+    std::vector<float> applyPhaseRetrieval(const std::vector<float>& image, int nx, int ny, float alpha, float pix);
 };
 
 #endif // PROJ_CORRECTION_H
