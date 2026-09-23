@@ -32,6 +32,14 @@ public:
     //      from a stripe artifact to this filter, so this excludes it from filtering instead of
     //      letting it get suppressed. maskInnerRadius = 0 protects a solid disk out to
     //      maskOuterRadius; a nonzero maskInnerRadius protects only the annulus between the two.
+    //      Independently of these, a small built-in floor (see remove_stripes' definition) always
+    //      protects a few columns immediately around the rotation axis: the same "can't tell a
+    //      stripe from real content" problem is at its worst exactly at r=0 (a ring of vanishing
+    //      radius carries no distinguishing signal at all), and the residual, imperfectly-damped
+    //      angular-frequency content this filter can leave there was observed backprojecting into
+    //      a starburst artifact rather than the milder, better-understood ring an uncorrected
+    //      defect there would otherwise leave. This floor is combined with (not replaced by) any
+    //      wider mask passed here.
     static void remove_stripes(cv::Mat& sinogram, int level, double sigma, int order = 3, int pad = 200,
                                 int maskInnerRadius = 0, int maskOuterRadius = 0);
 

@@ -348,17 +348,26 @@ void RingFilter::remove_stripes(cv::Mat& sinogram, int level, double sigma, int 
     if (level < 1)
         throw std::invalid_argument("RingFilter::remove_stripes: level must be >= 1");
 
-    cv::Mat original;
+    const int center = sinogram.cols / 2;
+
+    // See remove_stripes' declaration: always protect a small floor immediately around the
+    // rotation axis, regardless of the caller-specified mask - this is the one region where this
+    // filter's "can't tell a stripe from real content" blind spot is unavoidable (a ring of
+    // vanishing radius has no distinguishing signal at all), and leaving it fully exposed was
+    // observed producing a starburst artifact. 0.5% of the sinogram width, floored at 3 columns.
+    const int centerFloor = std::max(3, sinogram.cols / 200);
+    int floorLo = std::max(0, center - centerFloor);
+    int floorHi = std::min(sinogram.cols, center + centerFloor);
+
     int rightLo = 0, rightHi = 0, leftLo = 0, leftHi = 0;
-    if (maskOuterRadius > 0 && maskOuterRadius > maskInnerRadius) {
-        int center = sinogram.cols / 2;
+    bool haveUserMask = maskOuterRadius > 0 && maskOuterRadius > maskInnerRadius;
+    if (haveUserMask) {
         rightLo = std::min(sinogram.cols, center + maskInnerRadius);
         rightHi = std::min(sinogram.cols, center + maskOuterRadius);
         leftHi = std::max(0, center - maskInnerRadius);
         leftLo = std::max(0, center - maskOuterRadius);
-        if (rightLo < rightHi || leftLo < leftHi)
-            original = sinogram.clone();
     }
+    cv::Mat original = sinogram.clone();
 
     Wavelet w = make_wavelet(order);
 
@@ -386,7 +395,9 @@ void RingFilter::remove_stripes(cv::Mat& sinogram, int level, double sigma, int 
     cv::Rect roi(pad, pad, sinogram.cols, sinogram.rows);
     approx(roi).copyTo(sinogram);
 
-    if (!original.empty()) {
+    if (floorLo < floorHi)
+        original.colRange(floorLo, floorHi).copyTo(sinogram.colRange(floorLo, floorHi));
+    if (haveUserMask) {
         if (rightLo < rightHi)
             original.colRange(rightLo, rightHi).copyTo(sinogram.colRange(rightLo, rightHi));
         if (leftLo < leftHi)
