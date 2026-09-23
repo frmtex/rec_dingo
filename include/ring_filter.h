@@ -21,7 +21,12 @@ public:
     // sinogram: CV_32FC1, modified in place.
     // level: wavelet decomposition depth.
     // sigma: damping strength (larger = stronger stripe suppression).
-    // order: Daubechies wavelet order, 1-8 (db1 = Haar .. db8).
+    // order: Daubechies wavelet order, 1-12 (db1 = Haar .. db12). Higher orders have more
+    //      vanishing moments (a smoother scaling function), which separates smooth real content
+    //      from localized stripe/defect content more cleanly in the detail subband - observed to
+    //      help specifically around the rotation-axis blind spot the built-in floor above
+    //      compensates for. Comes at the cost of a longer filter support (needs more `pad`, and
+    //      slightly more compute).
     // pad: padding (mean-padded rows, edge-padded columns) added before decomposition to
     //      keep boundary effects away from the real data, matching the Python default of 200.
     // maskInnerRadius/maskOuterRadius: if maskOuterRadius > maskInnerRadius (and > 0), columns
