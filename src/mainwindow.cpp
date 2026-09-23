@@ -37,6 +37,9 @@ MainWindow::MainWindow(QWidget *parent)
     // like a live option that silently does nothing.
     ui->checkBox_ringUseGpu->setChecked(false);
     ui->checkBox_ringUseGpu->setEnabled(false);
+    // Same reasoning for GPU spot filter/phase retrieval (see proj_correction.h's __APPLE__ guards).
+    ui->checkBox_useGpuProjCorrection->setChecked(false);
+    ui->checkBox_useGpuProjCorrection->setEnabled(false);
 #endif
 
     connect(ui->pushButton_ini, SIGNAL(clicked()), this, SLOT(slotFileOpen()));
@@ -357,6 +360,7 @@ void MainWindow::slot_First_Set()
     first_set->setData(workingpath,rect_roi_final);
     first_set->setSpotKernelSize(spot_kernel_size_from_ui());
     first_set->setBinning(ui->comboBox_binning->currentIndex() + 1);
+    first_set->setUseGpu(ui->checkBox_useGpuProjCorrection->isChecked());
     first_set->load_op_di();
     first_set->get_first_image_corr();
 
@@ -389,9 +393,10 @@ void MainWindow::slot_corr_scan()
     // StartStage::CorrectedProjections would otherwise reuse stale data from.
     preview_sino_cache = ReconstructionWorker::PreviewCache();
 
-    // Re-apply in case either was changed after "Load first set" ran.
+    // Re-apply in case any of these were changed after "Load first set" ran.
     first_set->setSpotKernelSize(spot_kernel_size_from_ui());
     first_set->setBinning(ui->comboBox_binning->currentIndex() + 1);
+    first_set->setUseGpu(ui->checkBox_useGpuProjCorrection->isChecked());
 
     ui->pushButton_corr_scan->setEnabled(false);
     ui->progressBar_reco->setValue(0);

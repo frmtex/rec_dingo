@@ -81,10 +81,13 @@ macx {
     HEADERS += include/fbp_accelerate_backend.h
     SOURCES += src/fbp_accelerate_backend.cpp
 } else {
-    # --- CUDA (reconstruction backprojection/ramp-filter kernels, optional GPU polar ring removal) ---
+    # --- CUDA (reconstruction backprojection/ramp-filter kernels, optional GPU polar ring removal,
+    # optional GPU spot filter/phase retrieval) ---
     # Quadro P2000 = Pascal, compute capability 6.1.
-    HEADERS += include/fbp_cuda_backend.h include/ring_removal_polar_cuda.h
-    CUDA_SOURCES += src/fbp_reconstructor_cuda.cu src/ring_removal_polar_cuda.cu
+    HEADERS += include/fbp_cuda_backend.h include/ring_removal_polar_cuda.h \
+        include/spot_filter_cuda.h include/phase_retrieval_cuda.h
+    CUDA_SOURCES += src/fbp_reconstructor_cuda.cu src/ring_removal_polar_cuda.cu \
+        src/spot_filter_cuda.cu src/phase_retrieval_cuda.cu
     CUDA_ARCH = sm_61
 
     # nvidia-cuda-toolkit's Ubuntu packaging installs nvcc onto PATH and
