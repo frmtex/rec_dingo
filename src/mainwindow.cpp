@@ -31,6 +31,17 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
+#if defined(__APPLE__)
+    // No CUDA polar-ring backend on macOS (see reconstruction_worker.cpp's __APPLE__ guards) -
+    // that path always runs on the CPU there, so disable the checkbox rather than let it look
+    // like a live option that silently does nothing.
+    ui->checkBox_ringUseGpu->setChecked(false);
+    ui->checkBox_ringUseGpu->setEnabled(false);
+    // Same reasoning for GPU spot filter/phase retrieval (see proj_correction.h's __APPLE__ guards).
+    ui->checkBox_useGpuProjCorrection->setChecked(false);
+    ui->checkBox_useGpuProjCorrection->setEnabled(false);
+#endif
+
     connect(ui->pushButton_ini, SIGNAL(clicked()), this, SLOT(slotFileOpen()));
     connect(ui->pushButton_roi, SIGNAL(clicked()), this, SLOT(slotGetROI()));
     connect(ui->pushButton_corr, SIGNAL(clicked()), this, SLOT(slotGetCorr()));
@@ -214,9 +225,12 @@ void MainWindow::slotFileOpen()
         ui->spinBox_ringThetaMin->setValue(getInt("polar_ring_theta_min", 30));
         ui->spinBox_ringWidth->setValue(getInt("polar_ring_width", 30));
         ui->comboBox_ringBoundaryMode->setCurrentIndex(getBool("polar_ring_wrap", true) ? 0 : 1);
+#if !defined(__APPLE__)
         ui->checkBox_ringUseGpu->setChecked(getBool("polar_ring_use_gpu", false));
+#endif
 
         ui->comboBox_fbpFilter->setCurrentIndex(getInt("fbp_filter", 3));
+        ui->comboBox_algorithm->setCurrentIndex(getInt("recon_algorithm", 0));
         ui->doubleSpinBox_circMask->setValue(getDouble("circ_mask_ratio", 0.99));
     }
 
@@ -564,6 +578,7 @@ void MainWindow::saveSettingsIni() const
     lines << QString("polar_ring_wrap=%1").arg(ui->comboBox_ringBoundaryMode->currentIndex() == 0 ? 1 : 0);
     lines << QString("polar_ring_use_gpu=%1").arg(ui->checkBox_ringUseGpu->isChecked() ? 1 : 0);
     lines << QString("fbp_filter=%1").arg(ui->comboBox_fbpFilter->currentIndex());
+    lines << QString("recon_algorithm=%1").arg(ui->comboBox_algorithm->currentIndex());
     lines << QString("circ_mask_ratio=%1").arg(ui->doubleSpinBox_circMask->value(), 0, 'g', 10);
 
     QFile outFile(path);
@@ -614,6 +629,10 @@ ReconstructionWorker::Params MainWindow::buildReconstructionParams()
     case 2: params.fbpFilter = FbpFilterType::Cosine; break;
     case 4: params.fbpFilter = FbpFilterType::Hann; break;
     default: params.fbpFilter = FbpFilterType::Hamming; break;
+    }
+    switch (ui->comboBox_algorithm->currentIndex()) {
+    case 1: params.algorithm = ReconstructionWorker::ReconAlgorithm::Gridrec; break;
+    default: params.algorithm = ReconstructionWorker::ReconAlgorithm::Fbp; break;
     }
     params.circMaskRatio = ui->doubleSpinBox_circMask->value();
     params.binning = ui->comboBox_binning->currentIndex() + 1;

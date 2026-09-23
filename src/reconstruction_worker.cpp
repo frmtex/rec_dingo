@@ -2,9 +2,13 @@
 #include "tilt_correction.h"
 #include "sinogram_io.h"
 #include "fbp_reconstructor.h"
+#include "gridrec_reconstructor.h"
+#include "slice_reconstructor.h"
 #include "ring_filter.h"
 #include "ring_removal_polar.h"
+#if !defined(__APPLE__)
 #include "ring_removal_polar_cuda.h"
+#endif
 #include <filesystem>
 #include <algorithm>
 #include <array>
@@ -16,6 +20,21 @@
 #include <thread>
 
 namespace fs = std::filesystem;
+
+namespace {
+
+std::unique_ptr<SliceReconstructor> make_reconstructor(int n_cols, const ReconstructionWorker::Params& p)
+{
+    switch (p.algorithm) {
+    case ReconstructionWorker::ReconAlgorithm::Gridrec:
+        return std::make_unique<GridrecReconstructor>(n_cols, p.fbpFilter);
+    case ReconstructionWorker::ReconAlgorithm::Fbp:
+    default:
+        return std::make_unique<FbpReconstructor>(n_cols, p.fbpFilter);
+    }
+}
+
+} // namespace
 
 ReconstructionWorker::ReconstructionWorker(Proj_correction* proj_correction, Params params,
                                             PreviewCache inputCache, QObject* parent)
@@ -122,7 +141,7 @@ void ReconstructionWorker::run()
 
         // --- Stage 2/3: read each sinogram back, shift to CoR, ring-filter, FBP, write slice. ---
         SinogramReader reader(sinoDir, n_rows);
-        FbpReconstructor fbp(n_cols, params_.fbpFilter);
+        std::unique_ptr<SliceReconstructor> recon = make_reconstructor(n_cols, params_);
         std::vector<double> angles = buildAngles();
 
         // Radius (as a fraction of n_cols/2) the polar ring filter processes out to. Defaults to
@@ -135,13 +154,15 @@ void ReconstructionWorker::run()
             && params_.ringMaskOuterRadius > 0)
             polarRingMaskRatio = params_.ringMaskOuterRadius / (n_cols / 2.0);
 
+#if !defined(__APPLE__)
         // reconstruct_slice() always produces a square n_cols x n_cols slice, so that's the fixed
-        // size to construct the GPU backend's cached buffers for. Constructed once here (like fbp
+        // size to construct the GPU backend's cached buffers for. Constructed once here (like recon
         // above) and shared across the row pool below - PolarRingCudaBackend serializes its own
         // calls internally, so no extra locking is needed at this call site.
         std::unique_ptr<PolarRingCudaBackend> polarRingGpu;
         if (params_.polarRingEnabled && params_.polarRingUseGpu)
             polarRingGpu = std::make_unique<PolarRingCudaBackend>(n_cols, n_cols, polarRingMaskRatio);
+#endif
 
         QString recoDir = params_.workingPath + "/reco/";
         fs::create_directories(recoDir.toStdString());
@@ -172,14 +193,14 @@ void ReconstructionWorker::run()
 
                     // Shift the sinogram so the rotation axis lands at the detector center.
                     if (params_.corOffset != 0.0)
-                        fbp.shift_sinogram(sino, params_.corOffset);
+                        recon->shift_sinogram(sino, params_.corOffset);
 
                     if (params_.ringEnabled)
                         RingFilter::remove_stripes(sino, params_.ringLevel, params_.ringSigma,
                                                     params_.ringOrder, params_.ringPad,
                                                     params_.ringMaskInnerRadius, params_.ringMaskOuterRadius);
 
-                    cv::Mat slice = fbp.reconstruct_slice(sino, angles, params_.circMaskRatio);
+                    cv::Mat slice = recon->reconstruct_slice(sino, angles, params_.circMaskRatio);
 
                     // Post-reconstruction, polar-domain ring removal - complements the
                     // sinogram-domain wavelet filter above. CPU path uses parallel=false: this
@@ -188,12 +209,18 @@ void ReconstructionWorker::run()
                     // machine (the same bug already fixed once in post_process_worker.cpp). The
                     // GPU path needs no such flag - PolarRingCudaBackend serializes itself.
                     if (params_.polarRingEnabled) {
+#if !defined(__APPLE__)
                         if (polarRingGpu) {
                             slice = polarRingGpu->remove_ring(slice, params_.polarRingThresh,
                                                                params_.polarRingThreshMax, params_.polarRingThreshMin,
                                                                params_.polarRingThetaMinDeg, params_.polarRingWidth,
                                                                params_.polarRingWrapBoundary);
-                        } else {
+                        } else
+#endif
+                        {
+                            // macOS has no CUDA polar-ring backend (see the __APPLE__ guards above
+                            // and in the includes/PolarRingCudaBackend construction) - always the
+                            // CPU path there, regardless of params_.polarRingUseGpu.
                             slice = PolarRingRemoval::remove_ring(slice, params_.polarRingThresh,
                                                                    params_.polarRingThreshMax, params_.polarRingThreshMin,
                                                                    params_.polarRingThetaMinDeg, params_.polarRingWidth,
@@ -321,14 +348,14 @@ void ReconstructionWorker::runPreview()
             outputCache.sinoTop = sinos[2].clone();
         }
 
-        FbpReconstructor fbp(n_cols, params_.fbpFilter);
+        std::unique_ptr<SliceReconstructor> recon = make_reconstructor(n_cols, params_);
         std::vector<double> angles = buildAngles();
         std::array<cv::Mat, 3> slices;
 
         for (int k = 0; k < 3; ++k) {
             cv::Mat sino = sinos[k];
             if (params_.corOffset != 0.0)
-                fbp.shift_sinogram(sino, params_.corOffset);
+                recon->shift_sinogram(sino, params_.corOffset);
             if (params_.ringEnabled)
                 RingFilter::remove_stripes(sino, params_.ringLevel, params_.ringSigma,
                                             params_.ringOrder, params_.ringPad,
@@ -338,7 +365,7 @@ void ReconstructionWorker::runPreview()
             // etc.) on top of this cached raw-FBP preview slice, every time it redraws - that's
             // what lets the user retune the polar-ring parameters interactively without re-running
             // this (expensive) preview reconstruction. Baking it in here too would double-apply it.
-            slices[k] = fbp.reconstruct_slice(sino, angles, params_.circMaskRatio);
+            slices[k] = recon->reconstruct_slice(sino, angles, params_.circMaskRatio);
 
             int pct = 70 + (k + 1) * 10;
             emit progress(pct, QString("Preview: reconstructed slice %1/3").arg(k + 1));

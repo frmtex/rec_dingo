@@ -95,29 +95,36 @@ namespace fs = std::filesystem;
 
 void Proj_correction::applySpotCorrection(cv::Mat& img, int kernel_size, int threshold)
 {
-    if (!use_gpu) {
-        Spot_filter::spot_correction(img, kernel_size, threshold);
+#if !defined(__APPLE__)
+    if (use_gpu) {
+        if (!spot_filter_gpu || img.rows != spot_filter_gpu_rows || img.cols != spot_filter_gpu_cols) {
+            spot_filter_gpu = std::make_unique<SpotFilterCudaBackend>(img.rows, img.cols);
+            spot_filter_gpu_rows = img.rows;
+            spot_filter_gpu_cols = img.cols;
+        }
+        spot_filter_gpu->spot_correction(img, kernel_size, threshold);
         return;
     }
-    if (!spot_filter_gpu || img.rows != spot_filter_gpu_rows || img.cols != spot_filter_gpu_cols) {
-        spot_filter_gpu = std::make_unique<SpotFilterCudaBackend>(img.rows, img.cols);
-        spot_filter_gpu_rows = img.rows;
-        spot_filter_gpu_cols = img.cols;
-    }
-    spot_filter_gpu->spot_correction(img, kernel_size, threshold);
+#endif
+    // No CUDA build on macOS (see the __APPLE__ guards in proj_correction.h) - always the CPU
+    // path here, regardless of use_gpu.
+    Spot_filter::spot_correction(img, kernel_size, threshold);
 }
 
 std::vector<float> Proj_correction::applyPhaseRetrieval(const std::vector<float>& image, int nx, int ny,
                                                           float alpha, float pix)
 {
-    if (!use_gpu)
-        return phase_retrieval(image, nx, ny, alpha, pix);
-    if (!phase_retrieval_gpu || nx != phase_retrieval_gpu_nx || ny != phase_retrieval_gpu_ny) {
-        phase_retrieval_gpu = std::make_unique<PhaseRetrievalCudaBackend>(nx, ny);
-        phase_retrieval_gpu_nx = nx;
-        phase_retrieval_gpu_ny = ny;
+#if !defined(__APPLE__)
+    if (use_gpu) {
+        if (!phase_retrieval_gpu || nx != phase_retrieval_gpu_nx || ny != phase_retrieval_gpu_ny) {
+            phase_retrieval_gpu = std::make_unique<PhaseRetrievalCudaBackend>(nx, ny);
+            phase_retrieval_gpu_nx = nx;
+            phase_retrieval_gpu_ny = ny;
+        }
+        return phase_retrieval_gpu->retrieve(image, alpha, pix);
     }
-    return phase_retrieval_gpu->retrieve(image, alpha, pix);
+#endif
+    return phase_retrieval(image, nx, ny, alpha, pix);
 }
 
 cv::Mat Proj_correction::read_cropped_binned(const QString& filename, const cv::Rect& fullResRoi) const

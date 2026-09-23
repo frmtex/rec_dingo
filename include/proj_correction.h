@@ -5,8 +5,10 @@
 #include <opencv2/opencv.hpp>
 #include <functional>
 #include <memory>
+#if !defined(__APPLE__)
 #include "spot_filter_cuda.h"
 #include "phase_retrieval_cuda.h"
+#endif
 
 class Proj_correction
 {
@@ -28,7 +30,9 @@ public:
     // Runs spot filtering and phase retrieval on the GPU (SpotFilterCudaBackend/
     // PhaseRetrievalCudaBackend) instead of the CPU (Spot_filter/phase_retrieval) - see
     // applySpotCorrection/applyPhaseRetrieval. The GPU backends are (re)built lazily, on first use
-    // or whenever the image size changes.
+    // or whenever the image size changes. No CUDA build on macOS (see the __APPLE__ guards below),
+    // so there this is a harmless no-op and applySpotCorrection/applyPhaseRetrieval always take the
+    // CPU path regardless of the flag - same pattern as ReconstructionWorker's polar ring GPU path.
     void setUseGpu(bool useGpu) { use_gpu = useGpu; }
     // Region of the corrected (cropped/binned) image containing only the primary beam, no sample -
     // used to correct for beam-intensity fluctuation over the course of a scan. Immediately reads
@@ -76,10 +80,12 @@ private:
     cv::Mat read_cropped_binned(const QString& filename, const cv::Rect& fullResRoi) const;
 
     bool use_gpu = false;
+#if !defined(__APPLE__)
     std::unique_ptr<SpotFilterCudaBackend> spot_filter_gpu;
     int spot_filter_gpu_rows = 0, spot_filter_gpu_cols = 0;
     std::unique_ptr<PhaseRetrievalCudaBackend> phase_retrieval_gpu;
     int phase_retrieval_gpu_nx = 0, phase_retrieval_gpu_ny = 0;
+#endif
 
     // Dispatches to Spot_filter::spot_correction (CPU) or spot_filter_gpu (GPU, rebuilt if img's
     // size doesn't match the cached backend) depending on use_gpu. Same call sites as before just
