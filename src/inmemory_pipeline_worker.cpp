@@ -1,9 +1,13 @@
 #include "inmemory_pipeline_worker.h"
 #include "tilt_correction.h"
 #include "fbp_reconstructor.h"
+#include "gridrec_reconstructor.h"
+#include "slice_reconstructor.h"
 #include "ring_filter.h"
 #include "ring_removal_polar.h"
+#if !defined(__APPLE__)
 #include "ring_removal_polar_cuda.h"
+#endif
 #include <filesystem>
 #include <atomic>
 #include <cmath>
@@ -13,6 +17,24 @@
 #include <thread>
 
 namespace fs = std::filesystem;
+
+namespace {
+
+// Same helper as reconstruction_worker.cpp's anonymous-namespace copy (duplicated rather than
+// shared across translation units - small enough, and matches this codebase's existing precedent
+// of per-file self-containment, e.g. fft_freq_index).
+std::unique_ptr<SliceReconstructor> make_reconstructor(int n_cols, const ReconstructionWorker::Params& p)
+{
+    switch (p.algorithm) {
+    case ReconstructionWorker::ReconAlgorithm::Gridrec:
+        return std::make_unique<GridrecReconstructor>(n_cols, p.fbpFilter);
+    case ReconstructionWorker::ReconAlgorithm::Fbp:
+    default:
+        return std::make_unique<FbpReconstructor>(n_cols, p.fbpFilter);
+    }
+}
+
+} // namespace
 
 InMemoryPipelineWorker::InMemoryPipelineWorker(Proj_correction* proj_correction, ReconstructionWorker::Params params,
                                                 QObject* parent)
@@ -103,7 +125,7 @@ void InMemoryPipelineWorker::run()
         // row's sinogram out of the in-RAM vector instead of a SinogramReader. Different threads
         // claim different (unique) row indices, so concurrent access to different sinograms[row]
         // elements is safe - the same guarantee SinogramReader's per-file reads gave, just RAM-backed.
-        FbpReconstructor fbp(n_cols, params_.fbpFilter);
+        std::unique_ptr<SliceReconstructor> recon = make_reconstructor(n_cols, params_);
         std::vector<double> angles = buildAngles();
 
         double polarRingMaskRatio = params_.circMaskRatio;
@@ -111,9 +133,13 @@ void InMemoryPipelineWorker::run()
             && params_.ringMaskOuterRadius > 0)
             polarRingMaskRatio = params_.ringMaskOuterRadius / (n_cols / 2.0);
 
+#if !defined(__APPLE__)
+        // No macOS equivalent of the CUDA polar-ring backend (see reconstruction_worker.cpp's
+        // __APPLE__ guards) - that path always runs on the CPU there.
         std::unique_ptr<PolarRingCudaBackend> polarRingGpu;
         if (params_.polarRingEnabled && params_.polarRingUseGpu)
             polarRingGpu = std::make_unique<PolarRingCudaBackend>(n_cols, n_cols, polarRingMaskRatio);
+#endif
 
         QString recoDir = params_.workingPath + "/reco/";
         fs::create_directories(recoDir.toStdString());
@@ -136,22 +162,25 @@ void InMemoryPipelineWorker::run()
                     cv::Mat sino = sinograms[row];
 
                     if (params_.corOffset != 0.0)
-                        fbp.shift_sinogram(sino, params_.corOffset);
+                        recon->shift_sinogram(sino, params_.corOffset);
 
                     if (params_.ringEnabled)
                         RingFilter::remove_stripes(sino, params_.ringLevel, params_.ringSigma,
                                                     params_.ringOrder, params_.ringPad,
                                                     params_.ringMaskInnerRadius, params_.ringMaskOuterRadius);
 
-                    cv::Mat slice = fbp.reconstruct_slice(sino, angles, params_.circMaskRatio);
+                    cv::Mat slice = recon->reconstruct_slice(sino, angles, params_.circMaskRatio);
 
                     if (params_.polarRingEnabled) {
+#if !defined(__APPLE__)
                         if (polarRingGpu) {
                             slice = polarRingGpu->remove_ring(slice, params_.polarRingThresh,
                                                                params_.polarRingThreshMax, params_.polarRingThreshMin,
                                                                params_.polarRingThetaMinDeg, params_.polarRingWidth,
                                                                params_.polarRingWrapBoundary);
-                        } else {
+                        } else
+#endif
+                        {
                             slice = PolarRingRemoval::remove_ring(slice, params_.polarRingThresh,
                                                                    params_.polarRingThreshMax, params_.polarRingThreshMin,
                                                                    params_.polarRingThetaMinDeg, params_.polarRingWidth,
