@@ -229,6 +229,7 @@ void MainWindow::slotFileOpen()
 #endif
 
         ui->comboBox_fbpFilter->setCurrentIndex(getInt("fbp_filter", 3));
+        ui->comboBox_algorithm->setCurrentIndex(getInt("recon_algorithm", 0));
         ui->doubleSpinBox_circMask->setValue(getDouble("circ_mask_ratio", 0.99));
     }
 
@@ -576,6 +577,7 @@ void MainWindow::saveSettingsIni() const
     lines << QString("polar_ring_wrap=%1").arg(ui->comboBox_ringBoundaryMode->currentIndex() == 0 ? 1 : 0);
     lines << QString("polar_ring_use_gpu=%1").arg(ui->checkBox_ringUseGpu->isChecked() ? 1 : 0);
     lines << QString("fbp_filter=%1").arg(ui->comboBox_fbpFilter->currentIndex());
+    lines << QString("recon_algorithm=%1").arg(ui->comboBox_algorithm->currentIndex());
     lines << QString("circ_mask_ratio=%1").arg(ui->doubleSpinBox_circMask->value(), 0, 'g', 10);
 
     QFile outFile(path);
@@ -626,6 +628,10 @@ ReconstructionWorker::Params MainWindow::buildReconstructionParams()
     case 2: params.fbpFilter = FbpFilterType::Cosine; break;
     case 4: params.fbpFilter = FbpFilterType::Hann; break;
     default: params.fbpFilter = FbpFilterType::Hamming; break;
+    }
+    switch (ui->comboBox_algorithm->currentIndex()) {
+    case 1: params.algorithm = ReconstructionWorker::ReconAlgorithm::Gridrec; break;
+    default: params.algorithm = ReconstructionWorker::ReconAlgorithm::Fbp; break;
     }
     params.circMaskRatio = ui->doubleSpinBox_circMask->value();
     params.binning = ui->comboBox_binning->currentIndex() + 1;

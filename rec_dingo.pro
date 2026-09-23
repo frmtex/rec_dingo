@@ -46,6 +46,7 @@ SOURCES += \
     src/rotation_axis.cpp \
     src/sinogram_io.cpp \
     src/fbp_reconstructor.cpp \
+    src/gridrec_reconstructor.cpp \
     src/ring_filter.cpp \
     src/ring_removal_polar.cpp \
     src/reconstruction_worker.cpp \
@@ -62,6 +63,8 @@ HEADERS += \
     include/rotation_axis.h \
     include/sinogram_io.h \
     include/fbp_reconstructor.h \
+    include/gridrec_reconstructor.h \
+    include/slice_reconstructor.h \
     include/ring_filter.h \
     include/ring_removal_polar.h \
     include/reconstruction_worker.h \
@@ -78,16 +81,16 @@ macx {
     # no macOS equivalent of the CUDA polar-ring backend, so that filter always takes the CPU path
     # (PolarRingRemoval::remove_ring, already shared cross-platform) - see the __APPLE__ guards in
     # reconstruction_worker.cpp and mainwindow.cpp.
-    HEADERS += include/fbp_accelerate_backend.h
-    SOURCES += src/fbp_accelerate_backend.cpp
+    HEADERS += include/fbp_accelerate_backend.h include/gridrec_accelerate_backend.h
+    SOURCES += src/fbp_accelerate_backend.cpp src/gridrec_accelerate_backend.cpp
 } else {
     # --- CUDA (reconstruction backprojection/ramp-filter kernels, optional GPU polar ring removal,
     # optional GPU spot filter/phase retrieval) ---
     # Quadro P2000 = Pascal, compute capability 6.1.
     HEADERS += include/fbp_cuda_backend.h include/ring_removal_polar_cuda.h \
-        include/spot_filter_cuda.h include/phase_retrieval_cuda.h
+        include/spot_filter_cuda.h include/phase_retrieval_cuda.h include/gridrec_cuda_backend.h
     CUDA_SOURCES += src/fbp_reconstructor_cuda.cu src/ring_removal_polar_cuda.cu \
-        src/spot_filter_cuda.cu src/phase_retrieval_cuda.cu
+        src/spot_filter_cuda.cu src/phase_retrieval_cuda.cu src/gridrec_reconstructor_cuda.cu
     CUDA_ARCH = sm_61
 
     # nvidia-cuda-toolkit's Ubuntu packaging installs nvcc onto PATH and

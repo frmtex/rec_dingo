@@ -1210,6 +1210,42 @@
        </property>
       </item>
      </widget>
+     <widget class="QLabel" name="label_algorithm">
+      <property name="geometry">
+       <rect>
+        <x>380</x>
+        <y>315</y>
+        <width>65</width>
+        <height>20</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>Algorithm</string>
+      </property>
+     </widget>
+     <widget class="QComboBox" name="comboBox_algorithm">
+      <property name="geometry">
+       <rect>
+        <x>445</x>
+        <y>315</y>
+        <width>80</width>
+        <height>20</height>
+       </rect>
+      </property>
+      <property name="toolTip">
+       <string>FBP: exact real-space filtered backprojection. Gridrec: Fourier-domain gridding reconstruction - much faster at high angle counts, at the cost of a small amount of gridding-kernel approximation error.</string>
+      </property>
+      <item>
+       <property name="text">
+        <string>FBP</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Gridrec</string>
+       </property>
+      </item>
+     </widget>
      <widget class="QLabel" name="label_startStage">
       <property name="geometry">
        <rect>

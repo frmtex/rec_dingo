@@ -3,6 +3,7 @@
 #include <opencv2/opencv.hpp>
 #include <memory>
 #include <vector>
+#include "slice_reconstructor.h"
 
 // Standard apodization windows applied to the ideal ramp filter (Kak & Slaney
 // convention, as a function of normalized frequency f in [-1, 1], f=0 at DC,
@@ -36,26 +37,26 @@ class FbpCudaBackend;
 // through this instance - this class itself holds no platform-specific state,
 // just the shared filter-construction math and a pointer to whichever
 // backend fbp_reconstructor.cpp was compiled against.
-class FbpReconstructor
+class FbpReconstructor : public SliceReconstructor
 {
 public:
     // n_detectors: number of columns in each sinogram row (detector width).
     explicit FbpReconstructor(int n_detectors, FbpFilterType filterType = FbpFilterType::Hamming);
-    ~FbpReconstructor();
+    ~FbpReconstructor() override;
 
     FbpReconstructor(const FbpReconstructor&) = delete;
     FbpReconstructor& operator=(const FbpReconstructor&) = delete;
 
     // Shifts a sinogram (n_angles x n_detectors, CV_32FC1) horizontally by
     // `shift` pixels (sub-pixel, via the Fourier shift theorem), in place.
-    void shift_sinogram(cv::Mat& sinogram, double shift) const;
+    void shift_sinogram(cv::Mat& sinogram, double shift) const override;
 
     // Filters (Hamming-windowed ramp) then backprojects a sinogram
     // (n_angles x n_detectors, CV_32FC1, already shifted onto the rotation
     // axis) into a reconstructed square slice of side n_detectors.
     // angles_rad.size() must equal sinogram.rows.
     cv::Mat reconstruct_slice(const cv::Mat& sinogram, const std::vector<double>& angles_rad,
-                               double circ_mask_ratio = 0.995) const;
+                               double circ_mask_ratio = 0.995) const override;
 
 private:
     int n_detectors_;
