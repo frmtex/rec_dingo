@@ -41,6 +41,35 @@ const std::vector<std::vector<float>>& daubechies_tables()
           0.008746094047015655f, 0.013981027917015516f, -0.04408825393106472f, -0.01736930100202211f,
           0.128747426620186f, 0.00047248457399797254f, -0.2840155429624281f, -0.015829105256023893f,
           0.5853546836548691f, 0.6756307362980128f, 0.3128715909144659f, 0.05441584224308161f },
+        // db9 - added for the ring-filter star-artifact investigation: higher orders (more
+        // vanishing moments, smoother scaling function) separate smooth real content from
+        // localized stripe/defect content more cleanly in the detail subband, observed to improve
+        // ring removal near the rotation-axis blind spot the built-in floor above compensates for.
+        { 0.0380779473638783f, 0.2438346746125904f, 0.6048231236901111f, 0.6572880780513005f,
+          0.1331973858250076f, -0.2932737832791749f, -0.0968407832229765f, 0.1485407493381064f,
+          0.0307256814793334f, -0.0676328290613300f, 0.0002509471148315f, 0.0223616621236791f,
+          -0.0047232047577514f, -0.0042815036824634f, 0.0018476468830562f, 0.0002303857635232f,
+          -0.0002519631889427f, 0.0000393473203163f },
+        // db10
+        { 0.0266700579005556f, 0.1881768000776915f, 0.5272011889317256f, 0.6884590394536036f,
+          0.2811723436605775f, -0.2498464243273154f, -0.1959462743773770f, 0.1273693403357933f,
+          0.0930573646035724f, -0.0713941471663971f, -0.0294575368218758f, 0.0332126740593410f,
+          0.0036065535669562f, -0.0107331754833306f, 0.0013953517470529f, 0.0019924052951851f,
+          -0.0006858566949597f, -0.0001164668551293f, 0.0000935886703201f, -0.0000132642028945f },
+        // db11
+        { 0.0186942977614711f, 0.1440670211506245f, 0.4498997643560453f, 0.6856867749162005f,
+          0.4119643689479075f, -0.1622752450274904f, -0.2742308468179470f, 0.0660435881966832f,
+          0.1498120124663785f, -0.0464799551166842f, -0.0664387856950252f, 0.0313350902190461f,
+          0.0208409043601811f, -0.0153648209062016f, -0.0033408588730144f, 0.0049284176560590f,
+          -0.0003085928588151f, -0.0008930232506663f, 0.0002491525235528f, 0.0000544390746994f,
+          -0.0000346349841870f, 0.0000044942742772f },
+        // db12
+        { 0.0131122579572295f, 0.1095662728211852f, 0.3773551352142127f, 0.6571987225793071f,
+          0.5158864784278156f, -0.0447638856537746f, -0.3161784537527855f, -0.0237792572560697f,
+          0.1824786059275797f, 0.0053595696743521f, -0.0964321200965071f, 0.0108491302558222f,
+          0.0415462774950844f, -0.0122186490697483f, -0.0128408251983007f, 0.0067114990087955f,
+          0.0022486072409952f, -0.0021795036186278f, 0.0000065451282125f, 0.0003886530628209f,
+          -0.0000885041092082f, -0.0000242415457570f, 0.0000127769522194f, -0.0000015290717581f },
     };
     return tables;
 }
@@ -348,17 +377,26 @@ void RingFilter::remove_stripes(cv::Mat& sinogram, int level, double sigma, int 
     if (level < 1)
         throw std::invalid_argument("RingFilter::remove_stripes: level must be >= 1");
 
-    cv::Mat original;
+    const int center = sinogram.cols / 2;
+
+    // See remove_stripes' declaration: always protect a small floor immediately around the
+    // rotation axis, regardless of the caller-specified mask - this is the one region where this
+    // filter's "can't tell a stripe from real content" blind spot is unavoidable (a ring of
+    // vanishing radius has no distinguishing signal at all), and leaving it fully exposed was
+    // observed producing a starburst artifact. 0.5% of the sinogram width, floored at 3 columns.
+    const int centerFloor = std::max(3, sinogram.cols / 200);
+    int floorLo = std::max(0, center - centerFloor);
+    int floorHi = std::min(sinogram.cols, center + centerFloor);
+
     int rightLo = 0, rightHi = 0, leftLo = 0, leftHi = 0;
-    if (maskOuterRadius > 0 && maskOuterRadius > maskInnerRadius) {
-        int center = sinogram.cols / 2;
+    bool haveUserMask = maskOuterRadius > 0 && maskOuterRadius > maskInnerRadius;
+    if (haveUserMask) {
         rightLo = std::min(sinogram.cols, center + maskInnerRadius);
         rightHi = std::min(sinogram.cols, center + maskOuterRadius);
         leftHi = std::max(0, center - maskInnerRadius);
         leftLo = std::max(0, center - maskOuterRadius);
-        if (rightLo < rightHi || leftLo < leftHi)
-            original = sinogram.clone();
     }
+    cv::Mat original = sinogram.clone();
 
     Wavelet w = make_wavelet(order);
 
@@ -386,7 +424,9 @@ void RingFilter::remove_stripes(cv::Mat& sinogram, int level, double sigma, int 
     cv::Rect roi(pad, pad, sinogram.cols, sinogram.rows);
     approx(roi).copyTo(sinogram);
 
-    if (!original.empty()) {
+    if (floorLo < floorHi)
+        original.colRange(floorLo, floorHi).copyTo(sinogram.colRange(floorLo, floorHi));
+    if (haveUserMask) {
         if (rightLo < rightHi)
             original.colRange(rightLo, rightHi).copyTo(sinogram.colRange(rightLo, rightHi));
         if (leftLo < leftHi)

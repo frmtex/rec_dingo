@@ -21,7 +21,12 @@ public:
     // sinogram: CV_32FC1, modified in place.
     // level: wavelet decomposition depth.
     // sigma: damping strength (larger = stronger stripe suppression).
-    // order: Daubechies wavelet order, 1-8 (db1 = Haar .. db8).
+    // order: Daubechies wavelet order, 1-12 (db1 = Haar .. db12). Higher orders have more
+    //      vanishing moments (a smoother scaling function), which separates smooth real content
+    //      from localized stripe/defect content more cleanly in the detail subband - observed to
+    //      help specifically around the rotation-axis blind spot the built-in floor above
+    //      compensates for. Comes at the cost of a longer filter support (needs more `pad`, and
+    //      slightly more compute).
     // pad: padding (mean-padded rows, edge-padded columns) added before decomposition to
     //      keep boundary effects away from the real data, matching the Python default of 200.
     // maskInnerRadius/maskOuterRadius: if maskOuterRadius > maskInnerRadius (and > 0), columns
@@ -32,6 +37,14 @@ public:
     //      from a stripe artifact to this filter, so this excludes it from filtering instead of
     //      letting it get suppressed. maskInnerRadius = 0 protects a solid disk out to
     //      maskOuterRadius; a nonzero maskInnerRadius protects only the annulus between the two.
+    //      Independently of these, a small built-in floor (see remove_stripes' definition) always
+    //      protects a few columns immediately around the rotation axis: the same "can't tell a
+    //      stripe from real content" problem is at its worst exactly at r=0 (a ring of vanishing
+    //      radius carries no distinguishing signal at all), and the residual, imperfectly-damped
+    //      angular-frequency content this filter can leave there was observed backprojecting into
+    //      a starburst artifact rather than the milder, better-understood ring an uncorrected
+    //      defect there would otherwise leave. This floor is combined with (not replaced by) any
+    //      wider mask passed here.
     static void remove_stripes(cv::Mat& sinogram, int level, double sigma, int order = 3, int pad = 200,
                                 int maskInnerRadius = 0, int maskOuterRadius = 0);
 

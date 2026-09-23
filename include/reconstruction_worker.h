@@ -62,8 +62,8 @@ public:
         double ringSigma = 2.0;
         int ringOrder = 3;
         int ringPad = 200;
-        int ringMaskInnerRadius = 0; // 0 = disabled; see RingFilter::remove_stripes
-        int ringMaskOuterRadius = 0;
+        int ringMaskInnerRadius = 0; // 0 = no user mask beyond remove_stripes' own built-in center
+        int ringMaskOuterRadius = 0; // floor; see RingFilter::remove_stripes
         // Post-reconstruction, polar-domain ring removal (PolarRingRemoval::remove_ring, see
         // ring_removal_polar.h) - runs on the reconstructed slice itself, right after
         // reconstruct_slice(), as a complement to the sinogram-domain wavelet-Fourier filter above.
