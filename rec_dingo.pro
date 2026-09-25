@@ -38,6 +38,7 @@ INCLUDEPATH += $$PWD/include
 
 SOURCES += \
     src/customview.cpp \
+    src/histogram_widget.cpp \
     src/main.cpp \
     src/mainwindow.cpp \
     src/proj_correction.cpp \
@@ -56,6 +57,7 @@ SOURCES += \
 
 HEADERS += \
     include/customview.h \
+    include/histogram_widget.h \
     include/mainwindow.h \
     include/proj_correction.h \
     include/spot_filter.h \

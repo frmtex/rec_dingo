@@ -12,9 +12,14 @@
 #include "reconstruction_worker.h"
 #include "post_process_worker.h"
 #include "corr_scan_worker.h"
+#include "histogram_widget.h"
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
+
+class QGraphicsPixmapItem;
+class QLabel;
+class QPushButton;
 
 class MainWindow : public QMainWindow
 {
@@ -25,7 +30,7 @@ public:
     ~MainWindow();
     void openImage();
     CustomView *customview;
-    QGraphicsScene *scene;
+    QGraphicsScene *scene = nullptr;
 
     QString workingpath;
     int angles, corr_projection, repeats, pixel_size, org_cols, org_rows,image_x, image_y;
@@ -55,6 +60,8 @@ private slots:
     void slot_post_progress(int percent, QString message);
     void slot_post_finished();
     void slot_post_failed(QString error);
+    void slot_load_reco_histogram();
+    void slot_reco_histogram_ready(RecoHistogram histogram);
     void slot_corr_scan_progress(int percent, QString message);
     void slot_corr_scan_finished();
     void slot_corr_scan_failed(QString error);
@@ -66,7 +73,7 @@ private:
     void correct_first_image();
     QStringList steuerelemente;
     QString first_image;
-    QImage scaledImage;
+    QImage scaledImage; // Grayscale16, always the raw (un-windowed) pixel data - see showScaledImage()
     QRect rect_roi_final;
 
     std::vector<cv::Rect> cor_rois;
@@ -86,6 +93,29 @@ private:
     // never by this app) are preserved verbatim above a sentinel comment line; everything from that
     // sentinel onward is this app's own section and is fully regenerated on each save.
     void saveSettingsIni() const;
+
+    // Display window for projection images (the view on the right of the tab widget): min/max
+    // sliders over a histogram of scaledImage. Purely a display mapping - never touches the data
+    // used for ROI selection or reconstruction - so dark images can be stretched to pick an ROI.
+    HistogramRangeControl* displayHist_ = nullptr;
+    QLabel* displayHistLabel_ = nullptr;
+    QGraphicsPixmapItem* displayItem_ = nullptr;
+    void setupDisplayHistogram();
+    // Puts scaledImage into the view through the current display window. resetWindow = true (a
+    // newly loaded image) recomputes the histogram and picks an auto-contrast window; false (a
+    // zoom into the same image) recomputes the histogram but keeps the window where it still fits.
+    void showScaledImage(bool resetWindow);
+    void renderDisplayWindow();
+    void disableDisplayHistogram(); // for views the window doesn't apply to (reconstruction previews)
+
+    // Histogram of reco/ next to the 16-bit conversion controls; its handles and the Clip % boxes
+    // stay in sync, and the run uses the handles' exact values once a histogram has been loaded.
+    HistogramRangeControl* recoHist_ = nullptr;
+    QPushButton* loadHistButton_ = nullptr;
+    void setupRecoHistogram();
+    void invalidateRecoHistogram(const QString& reason);
+    void syncClipBoxesFromRecoRange(double lo, double hi);
+    void syncRecoRangeFromClipBoxes();
 
     cv::Mat preview_slices[3]; // bottom, mid, top - cached so switching the combo doesn't recompute
     QImage matToPreviewImage(const cv::Mat& slice) const;
