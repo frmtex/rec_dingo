@@ -118,9 +118,21 @@ private:
     void syncRecoRangeFromClipBoxes();
 
     cv::Mat preview_slices[3]; // bottom, mid, top - cached so switching the combo doesn't recompute
-    QImage matToPreviewImage(const cv::Mat& slice) const;
+    QImage matToPreviewImage(const cv::Mat& slice, double lo, double hi) const;
     void display_preview_slice(int index);
     void refresh_preview_overlay(); // redraws whichever preview slice is showing, if any
+
+    // The showing preview slice after the polar ring filter and beam hardening - cached so that
+    // dragging the 16-bit range handles only redoes the (cheap) windowing, not those two steps.
+    // previewShownIndex_ is -1 whenever the view shows something other than a preview slice.
+    cv::Mat previewProcessed_;
+    int previewShownIndex_ = -1;
+    // Gray-level window for the preview: the Post Processing histogram's range if one is loaded
+    // (exactly what the 16-bit conversion will clip to), else the Clip % percentiles of this slice
+    // while 16-bit conversion is enabled, else a plain 1st/99th percentile auto-contrast.
+    void previewWindow(const cv::Mat& slice, double& lo, double& hi) const;
+    void renderPreviewWindow();
+    void refresh_preview_window(); // re-windows the showing preview slice from the cache, if any
 
     // Sinograms built by the last preview run, reused across "Preview B/M/T" clicks whenever only
     // CoR offset and/or ring-filter/FBP-filter settings changed - see ReconstructionWorker::PreviewCache.
