@@ -128,86 +128,102 @@ void PostProcessWorker::run()
         // three times - min/max, then a histogram for percentile-based clipping (so a few outlier
         // pixels don't compress the useful range), then the actual clip/scale/write. Cheap next to
         // the disk I/O each pass already does.
-        double loMinMax = std::numeric_limits<double>::max();
-        double hiMinMax = std::numeric_limits<double>::lowest();
-        {
-            std::mutex minMaxMutex;
-            std::atomic<size_t> done{0};
-            parallelForIndices(files.size(), [&](size_t i) {
-                cv::Mat slice = readSlice(files[i]);
-                applyBh(slice);
-                double mn, mx;
-                cv::minMaxLoc(slice, &mn, &mx);
-                {
-                    std::lock_guard<std::mutex> lock(minMaxMutex);
-                    loMinMax = std::min(loMinMax, mn);
-                    hiMinMax = std::max(hiMinMax, mx);
-                }
-                size_t d = done.fetch_add(1) + 1;
-                emit progress(static_cast<int>(33.0 * d / files.size()),
-                              QString("Scanning range: %1/%2").arg(d).arg(files.size()));
-            });
-        }
-
-        double loVal = loMinMax;
-        double hiVal = hiMinMax;
-        const bool wantsClip = params_.clipLowPercent > 0.0 || params_.clipHighPercent < 100.0;
-        if (hiMinMax > loMinMax && wantsClip) {
-            constexpr int kHistBins = 65536;
-            std::vector<uint64_t> hist(kHistBins, 0);
-            const double range = hiMinMax - loMinMax;
-            std::mutex histMutex;
-            std::atomic<size_t> done{0};
-            parallelForIndices(files.size(), [&](size_t i) {
-                cv::Mat slice = readSlice(files[i]);
-                applyBh(slice);
-                // Build a local histogram per file (no synchronization needed for the hot
-                // per-pixel loop), then merge once per file under the lock.
-                std::vector<uint64_t> localHist(kHistBins, 0);
-                for (int r = 0; r < slice.rows; ++r) {
-                    const float* row = slice.ptr<float>(r);
-                    for (int c = 0; c < slice.cols; ++c) {
-                        int bin = static_cast<int>((row[c] - loMinMax) / range * (kHistBins - 1));
-                        bin = std::clamp(bin, 0, kHistBins - 1);
-                        localHist[static_cast<size_t>(bin)]++;
+        //
+        // Absolute range (picked on the histogram display): no dataset-wide passes needed, so the
+        // whole progress bar is the write pass. Otherwise the range comes from the min/max scan
+        // and percentile histogram below, which take the first 66% of the bar.
+        double loVal = 0.0;
+        double hiVal = 0.0;
+        if (params_.useAbsoluteRange) {
+            loVal = params_.rangeLow;
+            hiVal = params_.rangeHigh;
+            if (!(hiVal > loVal))
+                throw std::runtime_error("16-bit range: max must be greater than min");
+        } else {
+            double loMinMax = std::numeric_limits<double>::max();
+            double hiMinMax = std::numeric_limits<double>::lowest();
+            {
+                std::mutex minMaxMutex;
+                std::atomic<size_t> done{0};
+                parallelForIndices(files.size(), [&](size_t i) {
+                    cv::Mat slice = readSlice(files[i]);
+                    applyBh(slice);
+                    double mn, mx;
+                    cv::minMaxLoc(slice, &mn, &mx);
+                    {
+                        std::lock_guard<std::mutex> lock(minMaxMutex);
+                        loMinMax = std::min(loMinMax, mn);
+                        hiMinMax = std::max(hiMinMax, mx);
                     }
+                    size_t d = done.fetch_add(1) + 1;
+                    emit progress(static_cast<int>(33.0 * d / files.size()),
+                                  QString("Scanning range: %1/%2").arg(d).arg(files.size()));
+                });
+            }
+
+            loVal = loMinMax;
+            hiVal = hiMinMax;
+            const bool wantsClip = params_.clipLowPercent > 0.0 || params_.clipHighPercent < 100.0;
+            if (hiMinMax > loMinMax && wantsClip) {
+                constexpr int kHistBins = 65536;
+                std::vector<uint64_t> hist(kHistBins, 0);
+                const double range = hiMinMax - loMinMax;
+                std::mutex histMutex;
+                std::atomic<size_t> done{0};
+                parallelForIndices(files.size(), [&](size_t i) {
+                    cv::Mat slice = readSlice(files[i]);
+                    applyBh(slice);
+                    // Build a local histogram per file (no synchronization needed for the hot
+                    // per-pixel loop), then merge once per file under the lock.
+                    std::vector<uint64_t> localHist(kHistBins, 0);
+                    for (int r = 0; r < slice.rows; ++r) {
+                        const float* row = slice.ptr<float>(r);
+                        for (int c = 0; c < slice.cols; ++c) {
+                            int bin = static_cast<int>((row[c] - loMinMax) / range * (kHistBins - 1));
+                            bin = std::clamp(bin, 0, kHistBins - 1);
+                            localHist[static_cast<size_t>(bin)]++;
+                        }
+                    }
+                    {
+                        std::lock_guard<std::mutex> lock(histMutex);
+                        for (int b = 0; b < kHistBins; ++b)
+                            hist[static_cast<size_t>(b)] += localHist[static_cast<size_t>(b)];
+                    }
+                    size_t d = done.fetch_add(1) + 1;
+                    emit progress(33 + static_cast<int>(33.0 * d / files.size()),
+                                  QString("Building histogram: %1/%2").arg(d).arg(files.size()));
+                });
+
+                uint64_t total = 0;
+                for (uint64_t count : hist)
+                    total += count;
+                const uint64_t loTarget = static_cast<uint64_t>(total * params_.clipLowPercent / 100.0);
+                const uint64_t hiTarget = static_cast<uint64_t>(total * params_.clipHighPercent / 100.0);
+
+                int loBin = 0, hiBin = kHistBins - 1;
+                uint64_t cum = 0;
+                for (int b = 0; b < kHistBins; ++b) {
+                    cum += hist[static_cast<size_t>(b)];
+                    if (cum >= loTarget) { loBin = b; break; }
                 }
-                {
-                    std::lock_guard<std::mutex> lock(histMutex);
-                    for (int b = 0; b < kHistBins; ++b)
-                        hist[static_cast<size_t>(b)] += localHist[static_cast<size_t>(b)];
+                cum = 0;
+                for (int b = 0; b < kHistBins; ++b) {
+                    cum += hist[static_cast<size_t>(b)];
+                    if (cum >= hiTarget) { hiBin = b; break; }
                 }
-                size_t d = done.fetch_add(1) + 1;
-                emit progress(33 + static_cast<int>(33.0 * d / files.size()),
-                              QString("Building histogram: %1/%2").arg(d).arg(files.size()));
-            });
 
-            uint64_t total = 0;
-            for (uint64_t count : hist)
-                total += count;
-            const uint64_t loTarget = static_cast<uint64_t>(total * params_.clipLowPercent / 100.0);
-            const uint64_t hiTarget = static_cast<uint64_t>(total * params_.clipHighPercent / 100.0);
-
-            int loBin = 0, hiBin = kHistBins - 1;
-            uint64_t cum = 0;
-            for (int b = 0; b < kHistBins; ++b) {
-                cum += hist[static_cast<size_t>(b)];
-                if (cum >= loTarget) { loBin = b; break; }
-            }
-            cum = 0;
-            for (int b = 0; b < kHistBins; ++b) {
-                cum += hist[static_cast<size_t>(b)];
-                if (cum >= hiTarget) { hiBin = b; break; }
+                loVal = loMinMax + (static_cast<double>(loBin) / (kHistBins - 1)) * range;
+                hiVal = loMinMax + (static_cast<double>(hiBin) / (kHistBins - 1)) * range;
+                if (hiVal <= loVal) {
+                    loVal = loMinMax;
+                    hiVal = hiMinMax;
+                }
             }
 
-            loVal = loMinMax + (static_cast<double>(loBin) / (kHistBins - 1)) * range;
-            hiVal = loMinMax + (static_cast<double>(hiBin) / (kHistBins - 1)) * range;
-            if (hiVal <= loVal) {
-                loVal = loMinMax;
-                hiVal = hiMinMax;
-            }
         }
 
+        const int writeBase = params_.useAbsoluteRange ? 0 : 66;
+        const double writeSpan = params_.useAbsoluteRange ? 100.0 : 34.0;
         const double scale = (hiVal > loVal) ? (65535.0 / (hiVal - loVal)) : 1.0;
         std::atomic<size_t> doneWrite{0};
         parallelForIndices(files.size(), [&](size_t i) {
@@ -221,11 +237,101 @@ void PostProcessWorker::run()
             QString outPath = postDir + QString::fromStdString(files[i].filename().string());
             cv::imwrite(outPath.toStdString(), out16);
             size_t d = doneWrite.fetch_add(1) + 1;
-            emit progress(66 + static_cast<int>(34.0 * d / files.size()),
+            emit progress(writeBase + static_cast<int>(writeSpan * d / files.size()),
                           QString("Writing 16-bit: %1/%2").arg(d).arg(files.size()));
         });
 
         emit finished();
+    } catch (const std::exception& e) {
+        emit failed(QString::fromStdString(e.what()));
+    }
+}
+
+void PostProcessWorker::runHistogram()
+{
+    try {
+        QString recoDir = params_.workingPath + "/reco/";
+        std::vector<fs::path> files = listRecoFiles(recoDir);
+        if (files.empty())
+            throw std::runtime_error("No reconstructed slices found in reco/ - run Reconstruction first");
+
+        const size_t total = files.size();
+        const size_t wanted = std::min(total, static_cast<size_t>(std::max(1, params_.histogramMaxSlices)));
+        std::vector<fs::path> sample;
+        sample.reserve(wanted);
+        for (size_t k = 0; k < wanted; ++k) {
+            const size_t idx = (wanted == 1) ? total / 2 : (k * (total - 1) + (wanted - 1) / 2) / (wanted - 1);
+            sample.push_back(files[idx]);
+        }
+
+        auto loadSlice = [this](const fs::path& path) {
+            cv::Mat slice = readSlice(path);
+            if (params_.beamHardeningEnabled)
+                slice = BeamHardening::apply(slice, params_.bhC1, params_.bhC2, params_.bhC3);
+            return slice;
+        };
+
+        double lo = std::numeric_limits<double>::max();
+        double hi = std::numeric_limits<double>::lowest();
+        {
+            std::mutex m;
+            std::atomic<size_t> done{0};
+            parallelForIndices(sample.size(), [&](size_t i) {
+                cv::Mat slice = loadSlice(sample[i]);
+                double mn, mx;
+                cv::minMaxLoc(slice, &mn, &mx);
+                {
+                    std::lock_guard<std::mutex> lock(m);
+                    lo = std::min(lo, mn);
+                    hi = std::max(hi, mx);
+                }
+                size_t d = done.fetch_add(1) + 1;
+                emit progress(static_cast<int>(50.0 * d / sample.size()),
+                              QString("Histogram: scanning range %1/%2").arg(d).arg(sample.size()));
+            });
+        }
+
+        RecoHistogram result;
+        result.slicesSampled = static_cast<int>(sample.size());
+        result.slicesTotal = static_cast<int>(total);
+        if (!(hi > lo)) {
+            emit histogramReady(result); // flat data: empty histogram, the UI shows "No histogram"
+            return;
+        }
+
+        const int bins = std::max(16, params_.histogramBins);
+        std::vector<uint64_t> hist(static_cast<size_t>(bins), 0);
+        {
+            std::mutex m;
+            std::atomic<size_t> done{0};
+            const double range = hi - lo;
+            parallelForIndices(sample.size(), [&](size_t i) {
+                cv::Mat slice = loadSlice(sample[i]);
+                std::vector<uint64_t> local(static_cast<size_t>(bins), 0);
+                for (int r = 0; r < slice.rows; ++r) {
+                    const float* row = slice.ptr<float>(r);
+                    for (int c = 0; c < slice.cols; ++c) {
+                        int bin = static_cast<int>((row[c] - lo) / range * bins);
+                        local[static_cast<size_t>(std::clamp(bin, 0, bins - 1))]++;
+                    }
+                }
+                {
+                    std::lock_guard<std::mutex> lock(m);
+                    for (int b = 0; b < bins; ++b)
+                        hist[static_cast<size_t>(b)] += local[static_cast<size_t>(b)];
+                }
+                size_t d = done.fetch_add(1) + 1;
+                emit progress(50 + static_cast<int>(50.0 * d / sample.size()),
+                              QString("Histogram: binning %1/%2").arg(d).arg(sample.size()));
+            });
+        }
+
+        result.lo = lo;
+        result.hi = hi;
+        result.counts.resize(bins);
+        for (int b = 0; b < bins; ++b)
+            result.counts[b] = static_cast<double>(hist[static_cast<size_t>(b)]);
+        emit histogramReady(result);
     } catch (const std::exception& e) {
         emit failed(QString::fromStdString(e.what()));
     }

@@ -8,6 +8,9 @@
 #include <QPoint>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QLabel>
+#include <QPushButton>
+#include <QGraphicsPixmapItem>
 #include <QSignalBlocker>
 #include <QMap>
 #include <QFile>
@@ -24,6 +27,37 @@
 #include "ring_removal_polar.h"
 #include "angle_file_reader.h"
 #include "corr_scan_worker.h"
+#include "histogram_widget.h"
+
+namespace {
+// Fits a 16-bit gray image inside maxW x maxH (keeping aspect ratio, enlarging if smaller) with
+// full 16-bit precision. QImage::scaled(SmoothTransformation) on Grayscale16 data is NOT safe
+// for this: on low-contrast dark images it collapsed every pixel to (nearly) the same gray value
+// - measured: a 900x1200 image with mean 1050 and sigma 20 came out with a single distinct value
+// - which destroys exactly the faint structure a display window is meant to bring out.
+QImage fitGray16(const cv::Mat& gray, int maxW, int maxH)
+{
+    cv::Mat src16;
+    if (gray.type() == CV_16UC1)
+        src16 = gray;
+    else
+        gray.convertTo(src16, CV_16U, gray.depth() == CV_8U ? 257.0 : 1.0);
+
+    const double scale = std::min(static_cast<double>(maxW) / src16.cols, static_cast<double>(maxH) / src16.rows);
+    const cv::Size size(std::max(1, static_cast<int>(std::lround(src16.cols * scale))),
+                        std::max(1, static_cast<int>(std::lround(src16.rows * scale))));
+    cv::Mat dst;
+    cv::resize(src16, dst, size, 0, 0, scale < 1.0 ? cv::INTER_AREA : cv::INTER_LINEAR);
+    return QImage(dst.data, dst.cols, dst.rows, static_cast<int>(dst.step), QImage::Format_Grayscale16).copy();
+}
+
+QImage fitGray16(const QImage& gray16, int maxW, int maxH)
+{
+    cv::Mat wrapped(gray16.height(), gray16.width(), CV_16UC1, const_cast<uchar*>(gray16.constBits()),
+                    static_cast<size_t>(gray16.bytesPerLine()));
+    return fitGray16(wrapped, maxW, maxH);
+}
+} // namespace
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -59,6 +93,9 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->comboBox_previewSlice, SIGNAL(currentIndexChanged(int)), this, SLOT(slot_show_preview_slice(int)));
 
     connect(ui->pushButton_runPostProcess, SIGNAL(clicked()), this, SLOT(slot_run_post_process()));
+
+    setupDisplayHistogram();
+    setupRecoHistogram();
 
     // Live-preview the beam-hardening correction on whichever B/M/T slice is showing, the same
     // way the ring-mask overlay updates live - no separate "preview" button needed.
@@ -130,6 +167,7 @@ void MainWindow::slotFileOpen()
     int test = fileName.lastIndexOf('/');
     workingpath.resize(test);
     ui->lineEdit_mainpath->setText(workingpath);
+    invalidateRecoHistogram(tr("New dataset opened"));
 
     QTextStream steuerStream( &file);
     QString iniline;
@@ -314,15 +352,10 @@ void MainWindow::openImage()
     org_cols = image.cols;
     org_rows = image.rows;
 
-    QImage qtImage(image.data, image.cols, image.rows, static_cast<int>(image.step), QImage::Format_Grayscale16);
-    scaledImage =  qtImage.scaled(600,800, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    scaledImage = fitGray16(image, 600, 800);
     ui->graphicsView->setDisplayedImageSize(scaledImage.size(), QSize(org_cols, org_rows));
 
-    scene = new QGraphicsScene(this);
-    scene->addPixmap(QPixmap::fromImage(scaledImage));
-    ui->graphicsView->setScene(scene);
-    qDebug()<< scene->sceneRect();
-
+    showScaledImage(true);
     ui->graphicsView->show();
 
 }
@@ -340,14 +373,10 @@ void MainWindow::update_view()
 
     qDebug() << "ratio" << image_ratio;
 
-    scaledImage =  roi_image.scaled(600,800, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    scaledImage = fitGray16(roi_image, 600, 800);
     ui->graphicsView->setDisplayedImageSize(scaledImage.size(), rect_roi.size());
 
-    ui->graphicsView->resetRoi();
-    scene->clear();
-    scene = new QGraphicsScene(this);
-    scene->addPixmap(QPixmap::fromImage(scaledImage));
-    ui->graphicsView->setScene(scene);
+    showScaledImage(false);
     ui->graphicsView->show();
 
 }
@@ -366,15 +395,10 @@ void MainWindow::slot_First_Set()
     first_set->load_op_di();
     first_set->get_first_image_corr();
 
-    QImage qtImage(first_set->im_show.data, first_set->im_show.cols, first_set->im_show.rows, static_cast<int>(first_set->im_show.step), QImage::Format_Grayscale16);
-    scaledImage =  qtImage.scaled(600,800, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    scaledImage = fitGray16(first_set->im_show, 600, 800);
     ui->graphicsView->setDisplayedImageSize(scaledImage.size(), QSize(first_set->im_show.cols, first_set->im_show.rows));
 
-    ui->graphicsView->resetRoi();
-    scene->clear();
-    scene = new QGraphicsScene(this);
-    scene->addPixmap(QPixmap::fromImage(scaledImage));
-    ui->graphicsView->setScene(scene);
+    showScaledImage(true);
     ui->graphicsView->show();
 
 
@@ -436,15 +460,10 @@ void MainWindow::slot_corr_scan_finished()
     ui->pushButton_corr_scan->setEnabled(true);
     saveSettingsIni();
 
-    QImage qtImage(first_set->im_show.data, first_set->im_show.cols, first_set->im_show.rows, static_cast<int>(first_set->im_show.step), QImage::Format_Grayscale16);
-    scaledImage =  qtImage.scaled(600,800, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    scaledImage = fitGray16(first_set->im_show, 600, 800);
     ui->graphicsView->setDisplayedImageSize(scaledImage.size(), QSize(first_set->im_show.cols, first_set->im_show.rows));
 
-    ui->graphicsView->resetRoi();
-    scene->clear();
-    scene = new QGraphicsScene(this);
-    scene->addPixmap(QPixmap::fromImage(scaledImage));
-    ui->graphicsView->setScene(scene);
+    showScaledImage(true);
     ui->graphicsView->show();
 }
 
@@ -757,6 +776,7 @@ void MainWindow::slot_reco_finished()
     ui->label_reco_status->setText(tr("Reconstruction complete"));
     set_reconstruction_controls_enabled(true);
     saveSettingsIni();
+    invalidateRecoHistogram(tr("reco/ was regenerated"));
 }
 
 void MainWindow::slot_reco_failed(QString error)
@@ -921,7 +941,9 @@ void MainWindow::display_preview_slice(int index)
         painter.drawEllipse(center, rOuter, rOuter);
     }
 
-    scene->clear();
+    disableDisplayHistogram();
+    if (scene)
+        scene->clear();
     scene = new QGraphicsScene(this);
     scene->addPixmap(QPixmap::fromImage(rgb));
     ui->graphicsView->resetRoi();
@@ -950,6 +972,11 @@ PostProcessWorker::Params MainWindow::buildPostProcessParams() const
     params.convert16Enabled = ui->checkBox_16bitEnable->isChecked();
     params.clipLowPercent = ui->doubleSpinBox_clipLow->value();
     params.clipHighPercent = ui->doubleSpinBox_clipHigh->value();
+    if (recoHist_ && recoHist_->hasHistogram()) {
+        params.useAbsoluteRange = true;
+        params.rangeLow = recoHist_->rangeLow();
+        params.rangeHigh = recoHist_->rangeHigh();
+    }
     return params;
 }
 
@@ -971,6 +998,7 @@ void MainWindow::slot_run_post_process()
     PostProcessWorker::Params params = buildPostProcessParams();
 
     ui->pushButton_runPostProcess->setEnabled(false);
+    loadHistButton_->setEnabled(false);
     ui->progressBar_reco->setValue(0);
     ui->label_post_status->setText(tr("Starting..."));
 
@@ -1004,6 +1032,7 @@ void MainWindow::slot_post_finished()
 {
     ui->label_post_status->setText(tr("Post-processing complete"));
     ui->pushButton_runPostProcess->setEnabled(true);
+    loadHistButton_->setEnabled(true);
 }
 
 void MainWindow::slot_post_failed(QString error)
@@ -1011,4 +1040,221 @@ void MainWindow::slot_post_failed(QString error)
     ui->label_post_status->setText(tr("Failed: ") + error);
     statusBar()->showMessage(tr("Post-processing failed: ") + error, 8000);
     ui->pushButton_runPostProcess->setEnabled(true);
+    loadHistButton_->setEnabled(true);
+}
+void MainWindow::setupDisplayHistogram()
+{
+    const QRect view = ui->graphicsView->geometry();
+    const int panelX = view.right() + 15;
+    const int panelW = 560;
+    if (width() < panelX + panelW + 10)
+        resize(panelX + panelW + 10, height());
+
+    displayHistLabel_ = new QLabel(tr("Display range (projection images)"), ui->centralwidget);
+    displayHistLabel_->setGeometry(panelX, view.top(), panelW, 20);
+    QFont f = displayHistLabel_->font();
+    f.setBold(true);
+    displayHistLabel_->setFont(f);
+
+    displayHist_ = new HistogramRangeControl(ui->centralwidget);
+    displayHist_->setGeometry(panelX, view.top() + 24, panelW, 190);
+    displayHist_->setIntegerData(true);
+    displayHist_->setAutoPercentiles(0.5, 99.5);
+    displayHist_->setEnabled(false);
+    displayHistLabel_->show();
+    displayHist_->show();
+
+    connect(displayHist_, &HistogramRangeControl::rangeChanged, this,
+            [this](double, double) { renderDisplayWindow(); });
+}
+
+void MainWindow::showScaledImage(bool resetWindow)
+{
+    ui->graphicsView->resetRoi();
+    QGraphicsScene* old = scene;
+    scene = new QGraphicsScene(this);
+    displayItem_ = nullptr;
+    ui->graphicsView->setScene(scene);
+    if (old)
+        old->deleteLater();
+
+    if (scaledImage.isNull())
+        return;
+    if (scaledImage.format() != QImage::Format_Grayscale16)
+        scaledImage = scaledImage.convertToFormat(QImage::Format_Grayscale16);
+
+    cv::Mat src(scaledImage.height(), scaledImage.width(), CV_16UC1,
+                const_cast<uchar*>(scaledImage.constBits()), static_cast<size_t>(scaledImage.bytesPerLine()));
+    double mn = 0.0, mx = 0.0;
+    cv::minMaxLoc(src, &mn, &mx);
+    if (mx <= mn)
+        mx = mn + 1.0;
+
+    // Whole-gray-level bins: with more bins than levels the integer data would fall into every
+    // other bin and the histogram would look like a comb.
+    constexpr int kMaxBins = 2048;
+    const int levels = static_cast<int>(mx - mn) + 1;
+    const int binWidth = std::max(1, (levels + kMaxBins - 1) / kMaxBins);
+    const int bins = (levels + binWidth - 1) / binWidth;
+    QVector<double> counts(bins, 0.0);
+    for (int r = 0; r < src.rows; ++r) {
+        const uint16_t* row = src.ptr<uint16_t>(r);
+        for (int c = 0; c < src.cols; ++c)
+            counts[static_cast<int>((row[c] - static_cast<int>(mn)) / binWidth)] += 1.0;
+    }
+
+    displayHist_->setEnabled(true);
+    displayHistLabel_->setText(tr("Display range (projection images)"));
+    displayHist_->setHistogram(counts, mn, mn + static_cast<double>(bins) * binWidth, /*keepRange=*/!resetWindow);
+    renderDisplayWindow();
+}
+
+void MainWindow::renderDisplayWindow()
+{
+    if (scaledImage.isNull() || !scene || scaledImage.format() != QImage::Format_Grayscale16)
+        return;
+
+    double lo = 0.0, hi = 65535.0; // no histogram yet: the plain, un-windowed 16-bit mapping
+    if (displayHist_->hasHistogram()) {
+        lo = displayHist_->rangeLow();
+        hi = displayHist_->rangeHigh();
+    }
+    if (hi <= lo)
+        hi = lo + 1.0;
+
+    cv::Mat src(scaledImage.height(), scaledImage.width(), CV_16UC1,
+                const_cast<uchar*>(scaledImage.constBits()), static_cast<size_t>(scaledImage.bytesPerLine()));
+    cv::Mat out8;
+    src.convertTo(out8, CV_8UC1, 255.0 / (hi - lo), -lo * 255.0 / (hi - lo));
+    QImage windowed(out8.data, out8.cols, out8.rows, static_cast<int>(out8.step), QImage::Format_Grayscale8);
+    const QPixmap pixmap = QPixmap::fromImage(windowed);
+
+    // Update the pixmap in place so an ROI rectangle drawn on the view survives a window change.
+    if (displayItem_)
+        displayItem_->setPixmap(pixmap);
+    else
+        displayItem_ = scene->addPixmap(pixmap);
+}
+
+void MainWindow::disableDisplayHistogram()
+{
+    displayItem_ = nullptr; // the caller is about to replace/clear the scene that owns it
+    displayHist_->clear();
+    displayHist_->setEnabled(false);
+    displayHistLabel_->setText(tr("Display range (n/a for reconstruction previews)"));
+}
+
+void MainWindow::setupRecoHistogram()
+{
+    recoHist_ = new HistogramRangeControl(ui->tab_3);
+    recoHist_->setGeometry(20, 188, 740, 145);
+    recoHist_->setAutoPercentiles(0.01, 99.99);
+    recoHist_->show();
+
+    loadHistButton_ = new QPushButton(tr("Show histogram"), ui->tab_3);
+    loadHistButton_->setGeometry(485, 112, 140, 28);
+    loadHistButton_->setToolTip(
+        tr("Sample reco/ and show its histogram. Drag the handles (or edit Min/Max) to choose the "
+           "range mapped onto 0-65535; values outside are clipped. Once shown, the conversion uses "
+           "exactly this range instead of Clip %."));
+    loadHistButton_->show();
+
+    // The status text is now also used for histogram messages, which don't fit the 400px label.
+    ui->label_post_status->setGeometry(215, 155, 545, 20);
+
+    connect(loadHistButton_, &QPushButton::clicked, this, &MainWindow::slot_load_reco_histogram);
+    connect(recoHist_, &HistogramRangeControl::rangeChanged, this,
+            [this](double lo, double hi) { syncClipBoxesFromRecoRange(lo, hi); });
+    connect(ui->doubleSpinBox_clipLow, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+            [this](double) { syncRecoRangeFromClipBoxes(); });
+    connect(ui->doubleSpinBox_clipHigh, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+            [this](double) { syncRecoRangeFromClipBoxes(); });
+
+    // The histogram is of beam-hardening-corrected values when that's enabled, so changing the
+    // correction makes the handles' values meaningless.
+    const QString bhChanged = tr("Beam-hardening settings changed");
+    connect(ui->checkBox_bhEnable, &QCheckBox::toggled, this,
+            [this, bhChanged](bool) { invalidateRecoHistogram(bhChanged); });
+    for (QDoubleSpinBox* box : {ui->doubleSpinBox_bhC1, ui->doubleSpinBox_bhC2, ui->doubleSpinBox_bhC3})
+        connect(box, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+                [this, bhChanged](double) { invalidateRecoHistogram(bhChanged); });
+}
+
+void MainWindow::invalidateRecoHistogram(const QString& reason)
+{
+    if (!recoHist_ || !recoHist_->hasHistogram())
+        return;
+    recoHist_->clear();
+    ui->label_post_status->setText(tr("%1: histogram cleared, using Clip % again").arg(reason));
+}
+
+void MainWindow::syncClipBoxesFromRecoRange(double lo, double hi)
+{
+    QSignalBlocker blockLow(ui->doubleSpinBox_clipLow);
+    QSignalBlocker blockHigh(ui->doubleSpinBox_clipHigh);
+    ui->doubleSpinBox_clipLow->setValue(100.0 * recoHist_->fractionAtValue(lo));
+    ui->doubleSpinBox_clipHigh->setValue(100.0 * recoHist_->fractionAtValue(hi));
+}
+
+void MainWindow::syncRecoRangeFromClipBoxes()
+{
+    if (!recoHist_->hasHistogram())
+        return;
+    recoHist_->setRange(recoHist_->valueAtFraction(ui->doubleSpinBox_clipLow->value() / 100.0),
+                        recoHist_->valueAtFraction(ui->doubleSpinBox_clipHigh->value() / 100.0));
+}
+
+void MainWindow::slot_load_reco_histogram()
+{
+    if (workingpath.isEmpty()) {
+        statusBar()->showMessage(tr("Load a dataset before showing the histogram"), 3000);
+        return;
+    }
+    if (reco_thread || post_thread || corr_scan_thread) {
+        statusBar()->showMessage(tr("A reconstruction, preview, or post-processing run is already in progress"), 3000);
+        return;
+    }
+
+    PostProcessWorker::Params params = buildPostProcessParams();
+
+    ui->pushButton_runPostProcess->setEnabled(false);
+    loadHistButton_->setEnabled(false);
+    ui->progressBar_reco->setValue(0);
+    ui->label_post_status->setText(tr("Sampling reco/ for the histogram..."));
+
+    post_thread = new QThread(this);
+    post_worker = new PostProcessWorker(params);
+    post_worker->moveToThread(post_thread);
+
+    connect(post_thread, &QThread::started, post_worker, &PostProcessWorker::runHistogram);
+    connect(post_worker, &PostProcessWorker::progress, this, &MainWindow::slot_post_progress);
+    connect(post_worker, &PostProcessWorker::histogramReady, this, &MainWindow::slot_reco_histogram_ready);
+    connect(post_worker, &PostProcessWorker::failed, this, &MainWindow::slot_post_failed);
+    connect(post_worker, &PostProcessWorker::histogramReady, post_thread, &QThread::quit);
+    connect(post_worker, &PostProcessWorker::failed, post_thread, &QThread::quit);
+    connect(post_thread, &QThread::finished, post_worker, &QObject::deleteLater);
+    connect(post_thread, &QThread::finished, post_thread, &QObject::deleteLater);
+    connect(post_thread, &QThread::finished, this, [this]() {
+        post_thread = nullptr;
+        post_worker = nullptr;
+    });
+
+    post_thread->start();
+}
+
+void MainWindow::slot_reco_histogram_ready(RecoHistogram histogram)
+{
+    ui->pushButton_runPostProcess->setEnabled(true);
+    loadHistButton_->setEnabled(true);
+    ui->progressBar_reco->setValue(100);
+
+    if (histogram.counts.isEmpty()) {
+        ui->label_post_status->setText(tr("reco/ has no value range (all slices are constant)"));
+        return;
+    }
+    recoHist_->setHistogram(histogram.counts, histogram.lo, histogram.hi);
+    syncRecoRangeFromClipBoxes();
+    ui->label_post_status->setText(
+        tr("Histogram of %1/%2 slices. 16-bit conversion clips exactly to the selected range.")
+            .arg(histogram.slicesSampled).arg(histogram.slicesTotal));
 }
