@@ -132,6 +132,10 @@ void InMemoryPipelineWorker::run()
         if (params_.ringEnabled && params_.ringMaskOuterRadius > params_.ringMaskInnerRadius
             && params_.ringMaskOuterRadius > 0)
             polarRingMaskRatio = params_.ringMaskOuterRadius / (n_cols / 2.0);
+        // ...and the mask's inner radius is where it starts: the disc inside it is left to the
+        // wavelet filter, so the polar filter must not touch it (see centerExclusionRadius).
+        const int polarCenterExclusion = PolarRingRemoval::centerExclusionRadius(
+            params_.ringEnabled, params_.ringMaskInnerRadius, params_.ringMaskOuterRadius);
 
 #if !defined(__APPLE__)
         // No macOS equivalent of the CUDA polar-ring backend (see reconstruction_worker.cpp's
@@ -172,6 +176,9 @@ void InMemoryPipelineWorker::run()
                     cv::Mat slice = recon->reconstruct_slice(sino, angles, params_.circMaskRatio);
 
                     if (params_.polarRingEnabled) {
+                        cv::Mat beforePolar;
+                        if (polarCenterExclusion > 0)
+                            beforePolar = slice.clone();
 #if !defined(__APPLE__)
                         if (polarRingGpu) {
                             slice = polarRingGpu->remove_ring(slice, params_.polarRingThresh,
@@ -187,6 +194,7 @@ void InMemoryPipelineWorker::run()
                                                                    params_.polarRingWrapBoundary, /*parallel=*/false,
                                                                    polarRingMaskRatio);
                         }
+                        PolarRingRemoval::restore_center(beforePolar, slice, polarCenterExclusion);
                     }
 
                     QString outPath = recoDir + QString("reco_%1.tiff").arg(row, 5, 10, QChar('0'));
