@@ -64,6 +64,10 @@ public:
         int ringPad = 200;
         int ringMaskInnerRadius = 0; // 0 = no user mask beyond remove_stripes' own built-in center
         int ringMaskOuterRadius = 0; // floor; see RingFilter::remove_stripes
+        // The mask is the annulus [inner, outer) the wavelet filter skips. The polar filter (below)
+        // then runs only in that same annulus: it stops at outer, and with inner > 0 it leaves the
+        // disc inside inner untouched, since that disc is the wavelet filter's - see
+        // PolarRingRemoval::centerExclusionRadius for why the center must not go to the polar filter.
         // Post-reconstruction, polar-domain ring removal (PolarRingRemoval::remove_ring, see
         // ring_removal_polar.h) - runs on the reconstructed slice itself, right after
         // reconstruct_slice(), as a complement to the sinogram-domain wavelet-Fourier filter above.

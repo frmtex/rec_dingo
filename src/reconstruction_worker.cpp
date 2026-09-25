@@ -153,6 +153,10 @@ void ReconstructionWorker::run()
         if (params_.ringEnabled && params_.ringMaskOuterRadius > params_.ringMaskInnerRadius
             && params_.ringMaskOuterRadius > 0)
             polarRingMaskRatio = params_.ringMaskOuterRadius / (n_cols / 2.0);
+        // ...and the mask's inner radius is where it starts: the disc inside it is left to the
+        // wavelet filter, so the polar filter must not touch it (see centerExclusionRadius).
+        const int polarCenterExclusion = PolarRingRemoval::centerExclusionRadius(
+            params_.ringEnabled, params_.ringMaskInnerRadius, params_.ringMaskOuterRadius);
 
 #if !defined(__APPLE__)
         // reconstruct_slice() always produces a square n_cols x n_cols slice, so that's the fixed
@@ -209,6 +213,9 @@ void ReconstructionWorker::run()
                     // machine (the same bug already fixed once in post_process_worker.cpp). The
                     // GPU path needs no such flag - PolarRingCudaBackend serializes itself.
                     if (params_.polarRingEnabled) {
+                        cv::Mat beforePolar;
+                        if (polarCenterExclusion > 0)
+                            beforePolar = slice.clone();
 #if !defined(__APPLE__)
                         if (polarRingGpu) {
                             slice = polarRingGpu->remove_ring(slice, params_.polarRingThresh,
@@ -227,6 +234,7 @@ void ReconstructionWorker::run()
                                                                    params_.polarRingWrapBoundary, /*parallel=*/false,
                                                                    polarRingMaskRatio);
                         }
+                        PolarRingRemoval::restore_center(beforePolar, slice, polarCenterExclusion);
                     }
 
                     QString outPath = recoDir + QString("reco_%1.tiff").arg(row, 5, 10, QChar('0'));

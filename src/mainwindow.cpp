@@ -97,6 +97,16 @@ MainWindow::MainWindow(QWidget *parent)
     setupDisplayHistogram();
     setupRecoHistogram();
 
+    ui->spinBox_ringMaskInnerRadius->setToolTip(
+        tr("Inner edge of the protected annulus. The wavelet ring filter skips [inner, outer) and the "
+           "post-reconstruction (polar) ring filter runs only there. The disc inside the inner radius is "
+           "left to the wavelet filter and is not touched by the polar filter - set it a bit larger than "
+           "any star artefact around the rotation axis. 0 = the protected area is a solid disc, and the "
+           "polar filter also covers the center."));
+    ui->spinBox_ringMaskOuterRadius->setToolTip(
+        tr("Outer edge of the protected annulus (0 = no mask). The polar ring filter runs out to this "
+           "radius and no further."));
+
     // Live-preview the beam-hardening correction on whichever B/M/T slice is showing, the same
     // way the ring-mask overlay updates live - no separate "preview" button needed.
     connect(ui->checkBox_bhEnable, &QCheckBox::toggled, this,
@@ -854,10 +864,20 @@ void MainWindow::slot_show_preview_slice(int index)
     display_preview_slice(index);
 }
 
-QImage MainWindow::matToPreviewImage(const cv::Mat& slice) const
+void MainWindow::previewWindow(const cv::Mat& slice, double& lo, double& hi) const
 {
-    if (slice.empty())
-        return QImage();
+    if (recoHist_ && recoHist_->hasHistogram()) {
+        lo = recoHist_->rangeLow();
+        hi = recoHist_->rangeHigh();
+        return;
+    }
+
+    double lowPercent = 1.0;
+    double highPercent = 99.0;
+    if (ui->checkBox_16bitEnable->isChecked()) {
+        lowPercent = ui->doubleSpinBox_clipLow->value();
+        highPercent = ui->doubleSpinBox_clipHigh->value();
+    }
 
     CV_Assert(slice.type() == CV_32FC1);
     std::vector<float> vals;
@@ -872,16 +892,24 @@ QImage MainWindow::matToPreviewImage(const cv::Mat& slice) const
         }
     }
 
-    // Robust auto-contrast: clip to the 1st/99th percentile so a handful of outlier pixels
-    // (e.g. reconstruction edge artifacts) don't wash out the rest of the image.
-    size_t loIdx = static_cast<size_t>(vals.size() * 0.01);
-    size_t hiIdx = std::min(vals.size() - 1, static_cast<size_t>(vals.size() * 0.99));
+    // Robust auto-contrast: clip to percentiles so a handful of outlier pixels (e.g.
+    // reconstruction edge artifacts) don't wash out the rest of the image.
+    size_t loIdx = std::min(vals.size() - 1, static_cast<size_t>(vals.size() * lowPercent / 100.0));
+    size_t hiIdx = std::min(vals.size() - 1, static_cast<size_t>(vals.size() * highPercent / 100.0));
     std::nth_element(vals.begin(), vals.begin() + loIdx, vals.end());
-    float lo = vals[loIdx];
+    lo = vals[loIdx];
     std::nth_element(vals.begin(), vals.begin() + hiIdx, vals.end());
-    float hi = vals[hiIdx];
+    hi = vals[hiIdx];
+}
+
+QImage MainWindow::matToPreviewImage(const cv::Mat& slice, double lo, double hi) const
+{
+    if (slice.empty())
+        return QImage();
+
+    CV_Assert(slice.type() == CV_32FC1);
     if (hi <= lo)
-        hi = lo + 1.0f;
+        hi = lo + 1e-6 * std::max(1.0, std::abs(lo));
 
     cv::Mat norm;
     slice.convertTo(norm, CV_8UC1, 255.0 / (hi - lo), -lo * 255.0 / (hi - lo));
@@ -906,17 +934,36 @@ void MainWindow::display_preview_slice(int index)
             && displaySlice.cols > 0)
             maskRatio = maskOuter / (displaySlice.cols / 2.0);
 
+        const cv::Mat beforePolar = displaySlice; // remove_ring returns a new Mat; this stays intact
         displaySlice = PolarRingRemoval::remove_ring(
             displaySlice, ui->doubleSpinBox_ringThresh->value(), ui->doubleSpinBox_ringThreshMax->value(),
             ui->doubleSpinBox_ringThreshMin->value(), ui->spinBox_ringThetaMin->value(),
             ui->spinBox_ringWidth->value(), ui->comboBox_ringBoundaryMode->currentIndex() == 0,
             /*parallel=*/true, maskRatio);
+        PolarRingRemoval::restore_center(
+            beforePolar, displaySlice,
+            PolarRingRemoval::centerExclusionRadius(ui->checkBox_ringEnable->isChecked(), maskInner, maskOuter));
     }
     if (ui->checkBox_bhEnable->isChecked())
         displaySlice = BeamHardening::apply(displaySlice, ui->doubleSpinBox_bhC1->value(),
                                              ui->doubleSpinBox_bhC2->value(), ui->doubleSpinBox_bhC3->value());
 
-    QImage img = matToPreviewImage(displaySlice);
+    previewProcessed_ = displaySlice;
+    previewShownIndex_ = index;
+    renderPreviewWindow();
+
+    static const char* labels[3] = { "Bottom", "Mid", "Top" };
+    statusBar()->showMessage(tr("Preview: %1 slice").arg(labels[index]), 3000);
+}
+
+void MainWindow::renderPreviewWindow()
+{
+    if (previewProcessed_.empty())
+        return;
+
+    double lo = 0.0, hi = 1.0;
+    previewWindow(previewProcessed_, lo, hi);
+    QImage img = matToPreviewImage(previewProcessed_, lo, hi);
     QImage scaled = img.scaled(600, 800, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     QImage rgb = scaled.convertToFormat(QImage::Format_RGB32);
 
@@ -949,9 +996,12 @@ void MainWindow::display_preview_slice(int index)
     ui->graphicsView->resetRoi();
     ui->graphicsView->setScene(scene);
     ui->graphicsView->show();
+}
 
-    static const char* labels[3] = { "Bottom", "Mid", "Top" };
-    statusBar()->showMessage(tr("Preview: %1 slice").arg(labels[index]), 3000);
+void MainWindow::refresh_preview_window()
+{
+    if (previewShownIndex_ >= 0 && !previewProcessed_.empty())
+        renderPreviewWindow();
 }
 
 void MainWindow::refresh_preview_overlay()
@@ -1070,6 +1120,8 @@ void MainWindow::setupDisplayHistogram()
 
 void MainWindow::showScaledImage(bool resetWindow)
 {
+    previewShownIndex_ = -1;
+    previewProcessed_ = cv::Mat();
     ui->graphicsView->resetRoi();
     QGraphicsScene* old = scene;
     scene = new QGraphicsScene(this);
@@ -1141,7 +1193,7 @@ void MainWindow::disableDisplayHistogram()
     displayItem_ = nullptr; // the caller is about to replace/clear the scene that owns it
     displayHist_->clear();
     displayHist_->setEnabled(false);
-    displayHistLabel_->setText(tr("Display range (n/a for reconstruction previews)"));
+    displayHistLabel_->setText(tr("Display range (n/a for previews - they follow the Post Processing histogram)"));
 }
 
 void MainWindow::setupRecoHistogram()
@@ -1163,12 +1215,23 @@ void MainWindow::setupRecoHistogram()
     ui->label_post_status->setGeometry(215, 155, 545, 20);
 
     connect(loadHistButton_, &QPushButton::clicked, this, &MainWindow::slot_load_reco_histogram);
-    connect(recoHist_, &HistogramRangeControl::rangeChanged, this,
-            [this](double lo, double hi) { syncClipBoxesFromRecoRange(lo, hi); });
+    // Every change to the 16-bit range - dragging a handle, editing Min/Max or the Clip % boxes,
+    // toggling the conversion - re-windows the preview slice in the view so its effect is visible.
+    connect(recoHist_, &HistogramRangeControl::rangeChanged, this, [this](double lo, double hi) {
+        syncClipBoxesFromRecoRange(lo, hi);
+        refresh_preview_window();
+    });
     connect(ui->doubleSpinBox_clipLow, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-            [this](double) { syncRecoRangeFromClipBoxes(); });
+            [this](double) {
+                syncRecoRangeFromClipBoxes();
+                refresh_preview_window();
+            });
     connect(ui->doubleSpinBox_clipHigh, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-            [this](double) { syncRecoRangeFromClipBoxes(); });
+            [this](double) {
+                syncRecoRangeFromClipBoxes();
+                refresh_preview_window();
+            });
+    connect(ui->checkBox_16bitEnable, &QCheckBox::toggled, this, [this](bool) { refresh_preview_window(); });
 
     // The histogram is of beam-hardening-corrected values when that's enabled, so changing the
     // correction makes the handles' values meaningless.
@@ -1186,6 +1249,7 @@ void MainWindow::invalidateRecoHistogram(const QString& reason)
         return;
     recoHist_->clear();
     ui->label_post_status->setText(tr("%1: histogram cleared, using Clip % again").arg(reason));
+    refresh_preview_window();
 }
 
 void MainWindow::syncClipBoxesFromRecoRange(double lo, double hi)
@@ -1254,6 +1318,7 @@ void MainWindow::slot_reco_histogram_ready(RecoHistogram histogram)
     }
     recoHist_->setHistogram(histogram.counts, histogram.lo, histogram.hi);
     syncRecoRangeFromClipBoxes();
+    refresh_preview_window();
     ui->label_post_status->setText(
         tr("Histogram of %1/%2 slices. 16-bit conversion clips exactly to the selected range.")
             .arg(histogram.slicesSampled).arg(histogram.slicesTotal));

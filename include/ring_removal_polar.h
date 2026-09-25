@@ -69,6 +69,23 @@ public:
     static cv::Mat remove_ring(const cv::Mat& slice, double thresh, double threshMax, double threshMin,
                                 double thetaMinDeg, int ringWidth, bool wrapBoundary, bool parallel = true,
                                 double maskRadiusRatio = 1.0);
+
+    // Radius (pixels from the slice center) inside which the polar filter must leave the slice
+    // untouched, derived from the wavelet ring filter's mask settings: the wavelet filter skips
+    // the annulus [maskInnerRadius, maskOuterRadius) and the polar filter is meant to clean
+    // exactly that annulus, while the disc inside maskInnerRadius is left to the wavelet filter.
+    // Returns 0 (no exclusion) when the wavelet filter is off, no mask is set, or the inner
+    // radius is 0 (a solid protected disc). The polar transform is at its worst near r = 0 - a
+    // ring of vanishing radius has almost no pixels to average over, so the correction it
+    // estimates there smears into a starburst around the rotation axis - which is why the center
+    // is excluded rather than filtered.
+    static int centerExclusionRadius(bool waveletFilterEnabled, int maskInnerRadius, int maskOuterRadius);
+
+    // Restores every pixel of `corrected` closer than innerRadius to the slice center
+    // ((cols-1)/2, (rows-1)/2 - the same center remove_ring uses) to its value in `original`.
+    // Applied after remove_ring rather than inside it so it covers every backend (CPU and CUDA)
+    // identically. No-op when innerRadius <= 0.
+    static void restore_center(const cv::Mat& original, cv::Mat& corrected, int innerRadius);
 };
 
 #endif // RING_REMOVAL_POLAR_H

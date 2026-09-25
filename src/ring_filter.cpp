@@ -370,6 +370,39 @@ double median_abs_deviation(const std::vector<float>& values)
 
 } // namespace
 
+// Center-band correction used by RingFilter::remove_stripes (see the comments there): sets columns
+// [lo, hi) of `dst` to `base` minus the median, over all rows (angles), of base minus a cubic fit
+// through columns lo-2, lo-1, hi and hi+1 of `neighbours`. Requires lo >= 2 and hi + 1 < cols.
+// dst may alias neighbours - the band columns are never among the fit's nodes.
+static void correctCenterBand(cv::Mat& dst, const cv::Mat& neighbours, const cv::Mat& base, int lo, int hi)
+{
+    const int rows = dst.rows;
+    const int nodes[4] = { lo - 2, lo - 1, hi, hi + 1 };
+    std::vector<float> diff(static_cast<size_t>(rows));
+    for (int c = lo; c < hi; ++c) {
+        // 4-point Lagrange weights for evaluating the cubic through the nodes at column c.
+        float weight[4];
+        for (int i = 0; i < 4; ++i) {
+            double w = 1.0;
+            for (int j = 0; j < 4; ++j)
+                if (j != i)
+                    w *= static_cast<double>(c - nodes[j]) / static_cast<double>(nodes[i] - nodes[j]);
+            weight[i] = static_cast<float>(w);
+        }
+        for (int r = 0; r < rows; ++r) {
+            float fit = 0.0f;
+            for (int i = 0; i < 4; ++i)
+                fit += weight[i] * neighbours.at<float>(r, nodes[i]);
+            diff[static_cast<size_t>(r)] = base.at<float>(r, c) - fit;
+        }
+        const size_t mid = diff.size() / 2;
+        std::nth_element(diff.begin(), diff.begin() + static_cast<std::ptrdiff_t>(mid), diff.end());
+        const float offset = diff[mid];
+        for (int r = 0; r < rows; ++r)
+            dst.at<float>(r, c) = base.at<float>(r, c) - offset;
+    }
+}
+
 void RingFilter::remove_stripes(cv::Mat& sinogram, int level, double sigma, int order, int pad,
                                  int maskInnerRadius, int maskOuterRadius)
 {
@@ -379,11 +412,13 @@ void RingFilter::remove_stripes(cv::Mat& sinogram, int level, double sigma, int 
 
     const int center = sinogram.cols / 2;
 
-    // See remove_stripes' declaration: always protect a small floor immediately around the
-    // rotation axis, regardless of the caller-specified mask - this is the one region where this
-    // filter's "can't tell a stripe from real content" blind spot is unavoidable (a ring of
-    // vanishing radius has no distinguishing signal at all), and leaving it fully exposed was
-    // observed producing a starburst artifact. 0.5% of the sinogram width, floored at 3 columns.
+    // See remove_stripes' declaration: always keep the wavelet filter out of a small band
+    // immediately around the rotation axis, regardless of the caller-specified mask - this is the
+    // one region where this filter's "can't tell a stripe from real content" blind spot is
+    // unavoidable (a ring of vanishing radius has no distinguishing signal at all), and leaving it
+    // exposed was observed producing a starburst artifact. The band is instead corrected by
+    // interpolation (see the end of this function) so a detector defect there doesn't survive as a
+    // dot at the axis. 0.5% of the sinogram width, floored at 3 columns.
     const int centerFloor = std::max(3, sinogram.cols / 200);
     int floorLo = std::max(0, center - centerFloor);
     int floorHi = std::min(sinogram.cols, center + centerFloor);
@@ -397,6 +432,16 @@ void RingFilter::remove_stripes(cv::Mat& sinogram, int level, double sigma, int 
         leftLo = std::max(0, center - maskOuterRadius);
     }
     cv::Mat original = sinogram.clone();
+
+    // Pre-clean the center band on the raw sinogram, BEFORE the wavelet step: a strong defect in
+    // the band would otherwise leak through the wavelet filter's stripe damping into the columns
+    // just outside it, and those are what the final band correction (below) interpolates from -
+    // measured, that leaves a flat offset over the whole central region. `cleaned` is also the
+    // band's baseline for that final correction.
+    const bool canFixBand = floorLo < floorHi && floorLo >= 2 && floorHi + 1 < sinogram.cols;
+    if (canFixBand)
+        correctCenterBand(sinogram, original, original, floorLo, floorHi);
+    const cv::Mat cleaned = sinogram.clone();
 
     Wavelet w = make_wavelet(order);
 
@@ -424,14 +469,36 @@ void RingFilter::remove_stripes(cv::Mat& sinogram, int level, double sigma, int 
     cv::Rect roi(pad, pad, sinogram.cols, sinogram.rows);
     approx(roi).copyTo(sinogram);
 
-    if (floorLo < floorHi)
-        original.colRange(floorLo, floorHi).copyTo(sinogram.colRange(floorLo, floorHi));
     if (haveUserMask) {
         if (rightLo < rightHi)
             original.colRange(rightLo, rightHi).copyTo(sinogram.colRange(rightLo, rightHi));
         if (leftLo < leftHi)
             original.colRange(leftLo, leftHi).copyTo(sinogram.colRange(leftLo, leftHi));
     }
+
+    // Center band. Neither the wavelet filter nor the polar filter can safely act here, but simply
+    // restoring the original columns leaves any detector defect in the band as a small dot or
+    // hole at the rotation axis (a defective column that close to the axis reconstructs as a
+    // ring only a few pixels across, at several times the object's contrast). So correct just the
+    // part of these columns that no real content produces: for each column, compare it with a
+    // smooth (cubic) curve through the two columns just outside each side of the band and subtract
+    // the MEDIAN of that difference over all angles. A detector defect is constant across angle,
+    // so it lands in that median and is removed; anything that varies with angle - real structure
+    // crossing the axis, noise - is left exactly as measured. This is deliberately not a
+    // frequency-domain step, so it can't reintroduce the starburst. The curve is cubic rather than
+    // a straight line because a projection profile is curved near the axis: a chord across the
+    // band is biased by that curvature, and the bias is constant across angle, i.e. exactly what
+    // the median would then wrongly remove.
+    //
+    // Done twice: once on the raw sinogram before the wavelet step (see `cleaned` above), and
+    // here against the now-filtered neighbor columns, so the band ends up consistent with its
+    // filtered surroundings. Runs after the user mask is restored so the band is corrected even
+    // when a user mask covers it. Limitation: a real feature on the axis that's thinner than the
+    // band and constant across angle looks identical to a defect and is flattened along with it.
+    if (canFixBand)
+        correctCenterBand(sinogram, sinogram, cleaned, floorLo, floorHi);
+    else if (floorLo < floorHi)
+        original.colRange(floorLo, floorHi).copyTo(sinogram.colRange(floorLo, floorHi)); // too close to the edge for a 4-point fit
 }
 
 void RingFilter::remove_large_stripes(cv::Mat& sinogram, double snr, int smoothWindow,
