@@ -229,3 +229,34 @@ cv::Mat PolarRingRemoval::remove_ring(const cv::Mat& slice, double thresh, doubl
     cv::subtract(slice, ringEstimate, corrected);
     return corrected;
 }
+
+int PolarRingRemoval::centerExclusionRadius(bool waveletFilterEnabled, int maskInnerRadius, int maskOuterRadius)
+{
+    if (waveletFilterEnabled && maskOuterRadius > maskInnerRadius && maskOuterRadius > 0 && maskInnerRadius > 0)
+        return maskInnerRadius;
+    return 0;
+}
+
+void PolarRingRemoval::restore_center(const cv::Mat& original, cv::Mat& corrected, int innerRadius)
+{
+    if (innerRadius <= 0)
+        return;
+    CV_Assert(original.type() == CV_32FC1 && corrected.type() == CV_32FC1);
+    CV_Assert(original.size() == corrected.size());
+
+    const double centerX = (corrected.cols - 1) / 2.0;
+    const double centerY = (corrected.rows - 1) / 2.0;
+    const double r2 = static_cast<double>(innerRadius) * innerRadius;
+    const int y0 = std::max(0, static_cast<int>(std::ceil(centerY - innerRadius)));
+    const int y1 = std::min(corrected.rows - 1, static_cast<int>(std::floor(centerY + innerRadius)));
+    for (int y = y0; y <= y1; ++y) {
+        const double dy = y - centerY;
+        const float* src = original.ptr<float>(y);
+        float* dst = corrected.ptr<float>(y);
+        for (int x = 0; x < corrected.cols; ++x) {
+            const double dx = x - centerX;
+            if (dx * dx + dy * dy < r2)
+                dst[x] = src[x];
+        }
+    }
+}

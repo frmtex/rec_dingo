@@ -96,6 +96,16 @@ MainWindow::MainWindow(QWidget *parent)
     setupDisplayHistogram();
     setupRecoHistogram();
 
+    ui->spinBox_ringMaskInnerRadius->setToolTip(
+        tr("Inner edge of the protected annulus. The wavelet ring filter skips [inner, outer) and the "
+           "post-reconstruction (polar) ring filter runs only there. The disc inside the inner radius is "
+           "left to the wavelet filter and is not touched by the polar filter - set it a bit larger than "
+           "any star artefact around the rotation axis. 0 = the protected area is a solid disc, and the "
+           "polar filter also covers the center."));
+    ui->spinBox_ringMaskOuterRadius->setToolTip(
+        tr("Outer edge of the protected annulus (0 = no mask). The polar ring filter runs out to this "
+           "radius and no further."));
+
     // Live-preview the beam-hardening correction on whichever B/M/T slice is showing, the same
     // way the ring-mask overlay updates live - no separate "preview" button needed.
     connect(ui->checkBox_bhEnable, &QCheckBox::toggled, this,
@@ -859,11 +869,15 @@ void MainWindow::display_preview_slice(int index)
             && displaySlice.cols > 0)
             maskRatio = maskOuter / (displaySlice.cols / 2.0);
 
+        const cv::Mat beforePolar = displaySlice; // remove_ring returns a new Mat; this stays intact
         displaySlice = PolarRingRemoval::remove_ring(
             displaySlice, ui->doubleSpinBox_ringThresh->value(), ui->doubleSpinBox_ringThreshMax->value(),
             ui->doubleSpinBox_ringThreshMin->value(), ui->spinBox_ringThetaMin->value(),
             ui->spinBox_ringWidth->value(), ui->comboBox_ringBoundaryMode->currentIndex() == 0,
             /*parallel=*/true, maskRatio);
+        PolarRingRemoval::restore_center(
+            beforePolar, displaySlice,
+            PolarRingRemoval::centerExclusionRadius(ui->checkBox_ringEnable->isChecked(), maskInner, maskOuter));
     }
     if (ui->checkBox_bhEnable->isChecked())
         displaySlice = BeamHardening::apply(displaySlice, ui->doubleSpinBox_bhC1->value(),
