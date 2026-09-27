@@ -644,6 +644,11 @@ ReconstructionWorker::Params MainWindow::buildReconstructionParams()
     params.ringPad = ui->spinBox_ringPad->value();
     params.ringMaskInnerRadius = ui->spinBox_ringMaskInnerRadius->value();
     params.ringMaskOuterRadius = ui->spinBox_ringMaskOuterRadius->value();
+    params.largeStripeEnabled = ui->checkBox_largeStripeEnable->isChecked();
+    params.largeStripeSnr = ui->doubleSpinBox_largeStripeSnr->value();
+    params.largeStripeWindow = ui->spinBox_largeStripeWindow->value();
+    params.smallStripeEnabled = ui->checkBox_smallStripeEnable->isChecked();
+    params.smallStripeWindow = ui->spinBox_smallStripeWindow->value();
     params.polarRingEnabled = ui->checkBox_ringRemovalEnable->isChecked();
     params.polarRingThresh = ui->doubleSpinBox_ringThresh->value();
     params.polarRingThreshMax = ui->doubleSpinBox_ringThreshMax->value();
@@ -1094,20 +1099,20 @@ void MainWindow::slot_post_failed(QString error)
 }
 void MainWindow::setupDisplayHistogram()
 {
-    const QRect view = ui->graphicsView->geometry();
-    const int panelX = view.right() + 15;
-    const int panelW = 560;
-    if (width() < panelX + panelW + 10)
-        resize(panelX + panelW + 10, height());
+    // Lives on the Data Preparation tab (not centralwidget) since it's only ever meaningful for
+    // the projection images that tab loads - previews on the other tabs follow the Post Processing
+    // histogram instead (see disableDisplayHistogram()).
+    const int panelX = 700;
+    const int panelW = 430;
 
-    displayHistLabel_ = new QLabel(tr("Display range (projection images)"), ui->centralwidget);
-    displayHistLabel_->setGeometry(panelX, view.top(), panelW, 20);
+    displayHistLabel_ = new QLabel(tr("Display range (projection images)"), ui->tab);
+    displayHistLabel_->setGeometry(panelX, 10, panelW, 20);
     QFont f = displayHistLabel_->font();
     f.setBold(true);
     displayHistLabel_->setFont(f);
 
-    displayHist_ = new HistogramRangeControl(ui->centralwidget);
-    displayHist_->setGeometry(panelX, view.top() + 24, panelW, 190);
+    displayHist_ = new HistogramRangeControl(ui->tab);
+    displayHist_->setGeometry(panelX, 34, panelW, 190);
     displayHist_->setIntegerData(true);
     displayHist_->setAutoPercentiles(0.5, 99.5);
     displayHist_->setEnabled(false);

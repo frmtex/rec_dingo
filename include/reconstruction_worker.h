@@ -64,6 +64,18 @@ public:
         int ringPad = 200;
         int ringMaskInnerRadius = 0; // 0 = no user mask beyond remove_stripes' own built-in center
         int ringMaskOuterRadius = 0; // floor; see RingFilter::remove_stripes
+        // Complementary sinogram-domain filters, run right after remove_stripes (in that order):
+        // large-stripe removal catches wide column bands the wavelet decomposition misses, and
+        // small-stripe removal catches a thin ring from one or a few detector columns that both
+        // remove_stripes and remove_large_stripes miss. See ring_filter.h for how each works.
+        // Deliberately run unmasked (no ring{Mask,}* radii passed) - unlike remove_stripes, these
+        // aren't vulnerable to the global-Fourier-damping edge artifact the mask exists to avoid,
+        // so they're left free to correct a stripe column anywhere, including at the mask radius.
+        bool largeStripeEnabled = false;
+        double largeStripeSnr = 3.0;
+        int largeStripeWindow = 51;
+        bool smallStripeEnabled = false;
+        int smallStripeWindow = 5;
         // The mask is the annulus [inner, outer) the wavelet filter skips. The polar filter (below)
         // then runs only in that same annulus: it stops at outer, and with inner > 0 it leaves the
         // disc inside inner untouched, since that disc is the wavelet filter's - see
