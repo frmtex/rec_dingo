@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>800</width>
-    <height>1200</height>
+    <width>1200</width>
+    <height>1225</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -19,12 +19,12 @@
      <rect>
       <x>9</x>
       <y>-1</y>
-      <width>781</width>
-      <height>371</height>
+      <width>1165</width>
+      <height>445</height>
      </rect>
     </property>
     <property name="currentIndex">
-     <number>1</number>
+     <number>0</number>
     </property>
     <widget class="QWidget" name="tab">
      <attribute name="title">
@@ -618,488 +618,663 @@
        </property>
       </item>
      </widget>
-     <widget class="QLabel" name="label_10">
+     <widget class="QGroupBox" name="groupBox_ringFilter">
       <property name="geometry">
        <rect>
         <x>20</x>
         <y>95</y>
-        <width>200</width>
-        <height>16</height>
+        <width>545</width>
+        <height>145</height>
        </rect>
       </property>
-      <property name="text">
+      <property name="title">
        <string>Ring filter (Wavelet-Fourier)</string>
       </property>
+      <widget class="QCheckBox" name="checkBox_ringEnable">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>20</y>
+         <width>150</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Enable</string>
+       </property>
+       <property name="checked">
+        <bool>true</bool>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_11">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>50</y>
+         <width>35</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Level</string>
+       </property>
+      </widget>
+      <widget class="QSpinBox" name="spinBox_ringLevel">
+       <property name="geometry">
+        <rect>
+         <x>45</x>
+         <y>46</y>
+         <width>50</width>
+         <height>25</height>
+        </rect>
+       </property>
+       <property name="minimum">
+        <number>1</number>
+       </property>
+       <property name="maximum">
+        <number>8</number>
+       </property>
+       <property name="value">
+        <number>3</number>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_12">
+       <property name="geometry">
+        <rect>
+         <x>160</x>
+         <y>50</y>
+         <width>40</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Sigma</string>
+       </property>
+      </widget>
+      <widget class="QDoubleSpinBox" name="doubleSpinBox_ringSigma">
+       <property name="geometry">
+        <rect>
+         <x>205</x>
+         <y>46</y>
+         <width>65</width>
+         <height>25</height>
+        </rect>
+       </property>
+       <property name="minimum">
+        <double>0.100000000000000</double>
+       </property>
+       <property name="maximum">
+        <double>100.000000000000000</double>
+       </property>
+       <property name="value">
+        <double>2.000000000000000</double>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_13">
+       <property name="geometry">
+        <rect>
+         <x>320</x>
+         <y>50</y>
+         <width>65</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Order (db)</string>
+       </property>
+      </widget>
+      <widget class="QSpinBox" name="spinBox_ringOrder">
+       <property name="geometry">
+        <rect>
+         <x>390</x>
+         <y>46</y>
+         <width>60</width>
+         <height>25</height>
+        </rect>
+       </property>
+       <property name="minimum">
+        <number>1</number>
+       </property>
+       <property name="maximum">
+        <number>12</number>
+       </property>
+       <property name="value">
+        <number>3</number>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_14">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>85</y>
+         <width>30</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Pad</string>
+       </property>
+      </widget>
+      <widget class="QSpinBox" name="spinBox_ringPad">
+       <property name="geometry">
+        <rect>
+         <x>40</x>
+         <y>80</y>
+         <width>55</width>
+         <height>25</height>
+        </rect>
+       </property>
+       <property name="minimum">
+        <number>0</number>
+       </property>
+       <property name="maximum">
+        <number>2000</number>
+       </property>
+       <property name="value">
+        <number>200</number>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_ringMaskInner">
+       <property name="geometry">
+        <rect>
+         <x>160</x>
+         <y>85</y>
+         <width>55</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Mask in</string>
+       </property>
+      </widget>
+      <widget class="QSpinBox" name="spinBox_ringMaskInnerRadius">
+       <property name="geometry">
+        <rect>
+         <x>220</x>
+         <y>80</y>
+         <width>55</width>
+         <height>25</height>
+        </rect>
+       </property>
+       <property name="minimum">
+        <number>0</number>
+       </property>
+       <property name="maximum">
+        <number>4000</number>
+       </property>
+       <property name="value">
+        <number>0</number>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_ringMaskOuter">
+       <property name="geometry">
+        <rect>
+         <x>320</x>
+         <y>85</y>
+         <width>60</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Mask out</string>
+       </property>
+      </widget>
+      <widget class="QSpinBox" name="spinBox_ringMaskOuterRadius">
+       <property name="geometry">
+        <rect>
+         <x>385</x>
+         <y>80</y>
+         <width>55</width>
+         <height>25</height>
+        </rect>
+       </property>
+       <property name="minimum">
+        <number>0</number>
+       </property>
+       <property name="maximum">
+        <number>4000</number>
+       </property>
+       <property name="value">
+        <number>0</number>
+       </property>
+      </widget>
      </widget>
-     <widget class="QCheckBox" name="checkBox_ringEnable">
+     <widget class="QGroupBox" name="groupBox_polarRing">
       <property name="geometry">
        <rect>
-        <x>20</x>
-        <y>115</y>
-        <width>150</width>
-        <height>20</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Enable</string>
-      </property>
-      <property name="checked">
-       <bool>true</bool>
-      </property>
-     </widget>
-     <widget class="QLabel" name="label_11">
-      <property name="geometry">
-       <rect>
-        <x>20</x>
-        <y>145</y>
-        <width>40</width>
-        <height>16</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Level</string>
-      </property>
-     </widget>
-     <widget class="QSpinBox" name="spinBox_ringLevel">
-      <property name="geometry">
-       <rect>
-        <x>65</x>
-        <y>140</y>
-        <width>60</width>
-        <height>25</height>
-       </rect>
-      </property>
-      <property name="minimum">
-       <number>1</number>
-      </property>
-      <property name="maximum">
-       <number>8</number>
-      </property>
-      <property name="value">
-       <number>3</number>
-      </property>
-     </widget>
-     <widget class="QLabel" name="label_12">
-      <property name="geometry">
-       <rect>
-        <x>140</x>
-        <y>145</y>
-        <width>40</width>
-        <height>16</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Sigma</string>
-      </property>
-     </widget>
-     <widget class="QDoubleSpinBox" name="doubleSpinBox_ringSigma">
-      <property name="geometry">
-       <rect>
-        <x>190</x>
-        <y>140</y>
-        <width>70</width>
-        <height>25</height>
-       </rect>
-      </property>
-      <property name="minimum">
-       <double>0.100000000000000</double>
-      </property>
-      <property name="maximum">
-       <double>100.000000000000000</double>
-      </property>
-      <property name="value">
-       <double>2.000000000000000</double>
-      </property>
-     </widget>
-     <widget class="QLabel" name="label_13">
-      <property name="geometry">
-       <rect>
-        <x>275</x>
-        <y>145</y>
-        <width>70</width>
-        <height>16</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Order (db)</string>
-      </property>
-     </widget>
-     <widget class="QSpinBox" name="spinBox_ringOrder">
-      <property name="geometry">
-       <rect>
-        <x>350</x>
-        <y>140</y>
-        <width>60</width>
-        <height>25</height>
-       </rect>
-      </property>
-      <property name="minimum">
-       <number>1</number>
-      </property>
-      <property name="maximum">
-       <number>12</number>
-      </property>
-      <property name="value">
-       <number>3</number>
-      </property>
-     </widget>
-     <widget class="QLabel" name="label_14">
-      <property name="geometry">
-       <rect>
-        <x>425</x>
-        <y>145</y>
-        <width>35</width>
-        <height>16</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Pad</string>
-      </property>
-     </widget>
-     <widget class="QSpinBox" name="spinBox_ringPad">
-      <property name="geometry">
-       <rect>
-        <x>460</x>
-        <y>140</y>
-        <width>70</width>
-        <height>25</height>
-       </rect>
-      </property>
-      <property name="minimum">
-       <number>0</number>
-      </property>
-      <property name="maximum">
-       <number>2000</number>
-      </property>
-      <property name="value">
-       <number>200</number>
-      </property>
-     </widget>
-     <widget class="QLabel" name="label_ringMaskInner">
-      <property name="geometry">
-       <rect>
-        <x>535</x>
-        <y>145</y>
-        <width>55</width>
-        <height>16</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Mask in</string>
-      </property>
-     </widget>
-     <widget class="QSpinBox" name="spinBox_ringMaskInnerRadius">
-      <property name="geometry">
-       <rect>
-        <x>593</x>
-        <y>140</y>
-        <width>55</width>
-        <height>25</height>
-       </rect>
-      </property>
-      <property name="minimum">
-       <number>0</number>
-      </property>
-      <property name="maximum">
-       <number>4000</number>
-      </property>
-      <property name="value">
-       <number>0</number>
-      </property>
-     </widget>
-     <widget class="QLabel" name="label_ringMaskOuter">
-      <property name="geometry">
-       <rect>
-        <x>653</x>
-        <y>145</y>
-        <width>60</width>
-        <height>16</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Mask out</string>
-      </property>
-     </widget>
-     <widget class="QSpinBox" name="spinBox_ringMaskOuterRadius">
-      <property name="geometry">
-       <rect>
-        <x>716</x>
-        <y>140</y>
-        <width>55</width>
-        <height>25</height>
-       </rect>
-      </property>
-      <property name="minimum">
-       <number>0</number>
-      </property>
-      <property name="maximum">
-       <number>4000</number>
-      </property>
-      <property name="value">
-       <number>0</number>
-      </property>
-     </widget>
-     <widget class="QLabel" name="label_15">
-      <property name="geometry">
-       <rect>
-        <x>20</x>
-        <y>180</y>
-        <width>400</width>
-        <height>16</height>
+        <x>590</x>
+        <y>95</y>
+        <width>545</width>
+        <height>145</height>
        </rect>
       </property>
       <property name="toolTip">
        <string>Reimplemented from tomopy's remove_ring from a technical description (not its literal source, due to copyright-quoting limits) - verify against known-good output if exact parity matters.</string>
       </property>
-      <property name="text">
+      <property name="title">
        <string>Ring removal (post-reconstruction, polar-domain)</string>
       </property>
+      <widget class="QCheckBox" name="checkBox_ringRemovalEnable">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>20</y>
+         <width>90</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Enable</string>
+       </property>
+      </widget>
+      <widget class="QCheckBox" name="checkBox_ringUseGpu">
+       <property name="geometry">
+        <rect>
+         <x>350</x>
+         <y>20</y>
+         <width>110</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="toolTip">
+        <string>Runs the polar ring removal on the GPU instead of the CPU (which already uses all cores). Experimental - try both and compare, the GPU isn't guaranteed to be faster for this particular workload.</string>
+       </property>
+       <property name="text">
+        <string>Use GPU</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_ringThresh">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>52</y>
+         <width>60</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Threshold</string>
+       </property>
+      </widget>
+      <widget class="QDoubleSpinBox" name="doubleSpinBox_ringThresh">
+       <property name="geometry">
+        <rect>
+         <x>75</x>
+         <y>48</y>
+         <width>60</width>
+         <height>25</height>
+        </rect>
+       </property>
+       <property name="decimals">
+        <number>2</number>
+       </property>
+       <property name="minimum">
+        <double>0.000000000000000</double>
+       </property>
+       <property name="maximum">
+        <double>100000.000000000000000</double>
+       </property>
+       <property name="singleStep">
+        <double>10.000000000000000</double>
+       </property>
+       <property name="value">
+        <double>300.000000000000000</double>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_ringThreshMax">
+       <property name="geometry">
+        <rect>
+         <x>220</x>
+         <y>52</y>
+         <width>65</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Clamp max</string>
+       </property>
+      </widget>
+      <widget class="QDoubleSpinBox" name="doubleSpinBox_ringThreshMax">
+       <property name="geometry">
+        <rect>
+         <x>290</x>
+         <y>48</y>
+         <width>75</width>
+         <height>25</height>
+        </rect>
+       </property>
+       <property name="decimals">
+        <number>2</number>
+       </property>
+       <property name="minimum">
+        <double>-100000.000000000000000</double>
+       </property>
+       <property name="maximum">
+        <double>100000.000000000000000</double>
+       </property>
+       <property name="singleStep">
+        <double>10.000000000000000</double>
+       </property>
+       <property name="value">
+        <double>300.000000000000000</double>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_ringThreshMin">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>82</y>
+         <width>60</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Clamp min</string>
+       </property>
+      </widget>
+      <widget class="QDoubleSpinBox" name="doubleSpinBox_ringThreshMin">
+       <property name="geometry">
+        <rect>
+         <x>75</x>
+         <y>78</y>
+         <width>65</width>
+         <height>25</height>
+        </rect>
+       </property>
+       <property name="decimals">
+        <number>2</number>
+       </property>
+       <property name="minimum">
+        <double>-100000.000000000000000</double>
+       </property>
+       <property name="maximum">
+        <double>100000.000000000000000</double>
+       </property>
+       <property name="singleStep">
+        <double>10.000000000000000</double>
+       </property>
+       <property name="value">
+        <double>-100.000000000000000</double>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_ringThetaMin">
+       <property name="geometry">
+        <rect>
+         <x>220</x>
+         <y>82</y>
+         <width>90</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Theta min (deg)</string>
+       </property>
+      </widget>
+      <widget class="QSpinBox" name="spinBox_ringThetaMin">
+       <property name="geometry">
+        <rect>
+         <x>315</x>
+         <y>78</y>
+         <width>60</width>
+         <height>25</height>
+        </rect>
+       </property>
+       <property name="minimum">
+        <number>0</number>
+       </property>
+       <property name="maximum">
+        <number>179</number>
+       </property>
+       <property name="value">
+        <number>30</number>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_ringWidth">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>112</y>
+         <width>80</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Ring width (px)</string>
+       </property>
+      </widget>
+      <widget class="QSpinBox" name="spinBox_ringWidth">
+       <property name="geometry">
+        <rect>
+         <x>95</x>
+         <y>108</y>
+         <width>55</width>
+         <height>25</height>
+        </rect>
+       </property>
+       <property name="minimum">
+        <number>1</number>
+       </property>
+       <property name="maximum">
+        <number>500</number>
+       </property>
+       <property name="value">
+        <number>30</number>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_ringBoundary">
+       <property name="geometry">
+        <rect>
+         <x>220</x>
+         <y>112</y>
+         <width>55</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Boundary</string>
+       </property>
+      </widget>
+      <widget class="QComboBox" name="comboBox_ringBoundaryMode">
+       <property name="geometry">
+        <rect>
+         <x>280</x>
+         <y>108</y>
+         <width>100</width>
+         <height>25</height>
+        </rect>
+       </property>
+       <item>
+        <property name="text">
+         <string>Wrap</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Reflect</string>
+        </property>
+       </item>
+      </widget>
      </widget>
-     <widget class="QCheckBox" name="checkBox_ringRemovalEnable">
+     <widget class="QGroupBox" name="groupBox_largeStripe">
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>200</y>
-        <width>90</width>
-        <height>20</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Enable</string>
-      </property>
-     </widget>
-     <widget class="QLabel" name="label_ringThresh">
-      <property name="geometry">
-       <rect>
-        <x>130</x>
-        <y>205</y>
-        <width>70</width>
-        <height>16</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Threshold</string>
-      </property>
-     </widget>
-     <widget class="QDoubleSpinBox" name="doubleSpinBox_ringThresh">
-      <property name="geometry">
-       <rect>
-        <x>205</x>
-        <y>200</y>
-        <width>80</width>
-        <height>25</height>
-       </rect>
-      </property>
-      <property name="decimals">
-       <number>2</number>
-      </property>
-      <property name="minimum">
-       <double>0.000000000000000</double>
-      </property>
-      <property name="maximum">
-       <double>100000.000000000000000</double>
-      </property>
-      <property name="singleStep">
-       <double>10.000000000000000</double>
-      </property>
-      <property name="value">
-       <double>300.000000000000000</double>
-      </property>
-     </widget>
-     <widget class="QLabel" name="label_ringThreshMax">
-      <property name="geometry">
-       <rect>
-        <x>305</x>
-        <y>205</y>
-        <width>75</width>
-        <height>16</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Clamp max</string>
-      </property>
-     </widget>
-     <widget class="QDoubleSpinBox" name="doubleSpinBox_ringThreshMax">
-      <property name="geometry">
-       <rect>
-        <x>385</x>
-        <y>200</y>
-        <width>90</width>
-        <height>25</height>
-       </rect>
-      </property>
-      <property name="decimals">
-       <number>2</number>
-      </property>
-      <property name="minimum">
-       <double>-100000.000000000000000</double>
-      </property>
-      <property name="maximum">
-       <double>100000.000000000000000</double>
-      </property>
-      <property name="singleStep">
-       <double>10.000000000000000</double>
-      </property>
-      <property name="value">
-       <double>300.000000000000000</double>
-      </property>
-     </widget>
-     <widget class="QLabel" name="label_ringThreshMin">
-      <property name="geometry">
-       <rect>
-        <x>485</x>
-        <y>205</y>
-        <width>75</width>
-        <height>16</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Clamp min</string>
-      </property>
-     </widget>
-     <widget class="QDoubleSpinBox" name="doubleSpinBox_ringThreshMin">
-      <property name="geometry">
-       <rect>
-        <x>565</x>
-        <y>200</y>
-        <width>90</width>
-        <height>25</height>
-       </rect>
-      </property>
-      <property name="decimals">
-       <number>2</number>
-      </property>
-      <property name="minimum">
-       <double>-100000.000000000000000</double>
-      </property>
-      <property name="maximum">
-       <double>100000.000000000000000</double>
-      </property>
-      <property name="singleStep">
-       <double>10.000000000000000</double>
-      </property>
-      <property name="value">
-       <double>-100.000000000000000</double>
-      </property>
-     </widget>
-     <widget class="QLabel" name="label_ringThetaMin">
-      <property name="geometry">
-       <rect>
-        <x>20</x>
-        <y>235</y>
-        <width>110</width>
-        <height>16</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Theta min (deg)</string>
-      </property>
-     </widget>
-     <widget class="QSpinBox" name="spinBox_ringThetaMin">
-      <property name="geometry">
-       <rect>
-        <x>140</x>
-        <y>230</y>
-        <width>70</width>
-        <height>25</height>
-       </rect>
-      </property>
-      <property name="minimum">
-       <number>0</number>
-      </property>
-      <property name="maximum">
-       <number>179</number>
-      </property>
-      <property name="value">
-       <number>30</number>
-      </property>
-     </widget>
-     <widget class="QLabel" name="label_ringWidth">
-      <property name="geometry">
-       <rect>
-        <x>230</x>
-        <y>235</y>
-        <width>110</width>
-        <height>16</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Ring width (px)</string>
-      </property>
-     </widget>
-     <widget class="QSpinBox" name="spinBox_ringWidth">
-      <property name="geometry">
-       <rect>
-        <x>350</x>
-        <y>230</y>
-        <width>70</width>
-        <height>25</height>
-       </rect>
-      </property>
-      <property name="minimum">
-       <number>1</number>
-      </property>
-      <property name="maximum">
-       <number>500</number>
-      </property>
-      <property name="value">
-       <number>30</number>
-      </property>
-     </widget>
-     <widget class="QLabel" name="label_ringBoundary">
-      <property name="geometry">
-       <rect>
-        <x>440</x>
-        <y>235</y>
-        <width>65</width>
-        <height>16</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Boundary</string>
-      </property>
-     </widget>
-     <widget class="QComboBox" name="comboBox_ringBoundaryMode">
-      <property name="geometry">
-       <rect>
-        <x>510</x>
-        <y>230</y>
-        <width>100</width>
-        <height>25</height>
-       </rect>
-      </property>
-      <item>
-       <property name="text">
-        <string>Wrap</string>
-       </property>
-      </item>
-      <item>
-       <property name="text">
-        <string>Reflect</string>
-       </property>
-      </item>
-     </widget>
-     <widget class="QCheckBox" name="checkBox_ringUseGpu">
-      <property name="geometry">
-       <rect>
-        <x>625</x>
-        <y>230</y>
-        <width>110</width>
-        <height>25</height>
+        <y>250</y>
+        <width>545</width>
+        <height>70</height>
        </rect>
       </property>
       <property name="toolTip">
-       <string>Runs the polar ring removal on the GPU instead of the CPU (which already uses all cores). Experimental - try both and compare, the GPU isn't guaranteed to be faster for this particular workload.</string>
+       <string>Complementary to the wavelet-Fourier filter above: catches wide/broad column bands it misses, by comparing each column's median value across all angles to a smoothed baseline. Runs after that filter, unmasked.</string>
       </property>
-      <property name="text">
-       <string>Use GPU</string>
+      <property name="title">
+       <string>Remove large stripes</string>
       </property>
+      <widget class="QCheckBox" name="checkBox_largeStripeEnable">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>20</y>
+         <width>80</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Enable</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_largeStripeSnr">
+       <property name="geometry">
+        <rect>
+         <x>150</x>
+         <y>24</y>
+         <width>35</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>SNR</string>
+       </property>
+      </widget>
+      <widget class="QDoubleSpinBox" name="doubleSpinBox_largeStripeSnr">
+       <property name="geometry">
+        <rect>
+         <x>195</x>
+         <y>20</y>
+         <width>80</width>
+         <height>25</height>
+        </rect>
+       </property>
+       <property name="toolTip">
+        <string>How many robust standard deviations (MAD-based) a column's deviation from the smoothed background must exceed to be flagged as a stripe. Lower = more sensitive, higher = fewer false positives.</string>
+       </property>
+       <property name="decimals">
+        <number>2</number>
+       </property>
+       <property name="minimum">
+        <double>0.100000000000000</double>
+       </property>
+       <property name="maximum">
+        <double>50.000000000000000</double>
+       </property>
+       <property name="singleStep">
+        <double>0.500000000000000</double>
+       </property>
+       <property name="value">
+        <double>3.000000000000000</double>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_largeStripeWindow">
+       <property name="geometry">
+        <rect>
+         <x>340</x>
+         <y>24</y>
+         <width>55</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Window</string>
+       </property>
+      </widget>
+      <widget class="QSpinBox" name="spinBox_largeStripeWindow">
+       <property name="geometry">
+        <rect>
+         <x>405</x>
+         <y>20</y>
+         <width>80</width>
+         <height>25</height>
+        </rect>
+       </property>
+       <property name="toolTip">
+        <string>Must be more than ~2x the widest stripe you're removing, or the filter silently misses it. When in doubt, go wider - too large only costs a little edge precision.</string>
+       </property>
+       <property name="minimum">
+        <number>3</number>
+       </property>
+       <property name="maximum">
+        <number>2001</number>
+       </property>
+       <property name="singleStep">
+        <number>2</number>
+       </property>
+       <property name="value">
+        <number>51</number>
+       </property>
+      </widget>
+     </widget>
+     <widget class="QGroupBox" name="groupBox_smallStripe">
+      <property name="geometry">
+       <rect>
+        <x>590</x>
+        <y>250</y>
+        <width>545</width>
+        <height>70</height>
+       </rect>
+      </property>
+      <property name="toolTip">
+       <string>Complementary to both filters above: catches a thin ring left by one or a few detector columns with a slightly different gain/offset than their neighbors, by sorting each column's values across all angles and correcting outliers against their neighboring columns at each rank. Runs after the filters above, unmasked.</string>
+      </property>
+      <property name="title">
+       <string>Remove small stripes</string>
+      </property>
+      <widget class="QCheckBox" name="checkBox_smallStripeEnable">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>20</y>
+         <width>80</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Enable</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_smallStripeWindow">
+       <property name="geometry">
+        <rect>
+         <x>150</x>
+         <y>24</y>
+         <width>55</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Window</string>
+       </property>
+      </widget>
+      <widget class="QSpinBox" name="spinBox_smallStripeWindow">
+       <property name="geometry">
+        <rect>
+         <x>215</x>
+         <y>20</y>
+         <width>80</width>
+         <height>25</height>
+        </rect>
+       </property>
+       <property name="toolTip">
+        <string>Roughly the width of the defect in columns - a handful of pixels. Unlike the large-stripe window, bigger is NOT better here: too large starts blurring real structure across neighboring columns instead of just correcting the defective one.</string>
+       </property>
+       <property name="minimum">
+        <number>3</number>
+       </property>
+       <property name="maximum">
+        <number>101</number>
+       </property>
+       <property name="singleStep">
+        <number>2</number>
+       </property>
+       <property name="value">
+        <number>5</number>
+       </property>
+      </widget>
      </widget>
      <widget class="QLabel" name="label_fbpSectionHeader">
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>258</y>
+        <y>330</y>
         <width>231</width>
         <height>16</height>
        </rect>
@@ -1112,7 +1287,7 @@
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>275</y>
+        <y>347</y>
         <width>110</width>
         <height>20</height>
        </rect>
@@ -1125,7 +1300,7 @@
       <property name="geometry">
        <rect>
         <x>140</x>
-        <y>275</y>
+        <y>347</y>
         <width>70</width>
         <height>20</height>
        </rect>
@@ -1147,7 +1322,7 @@
       <property name="geometry">
        <rect>
         <x>230</x>
-        <y>275</y>
+        <y>347</y>
         <width>140</width>
         <height>24</height>
        </rect>
@@ -1160,7 +1335,7 @@
       <property name="geometry">
        <rect>
         <x>180</x>
-        <y>315</y>
+        <y>387</y>
         <width>40</width>
         <height>20</height>
        </rect>
@@ -1173,7 +1348,7 @@
       <property name="geometry">
        <rect>
         <x>230</x>
-        <y>315</y>
+        <y>387</y>
         <width>140</width>
         <height>20</height>
        </rect>
@@ -1214,7 +1389,7 @@
       <property name="geometry">
        <rect>
         <x>380</x>
-        <y>315</y>
+        <y>387</y>
         <width>65</width>
         <height>20</height>
        </rect>
@@ -1227,7 +1402,7 @@
       <property name="geometry">
        <rect>
         <x>445</x>
-        <y>315</y>
+        <y>387</y>
         <width>80</width>
         <height>20</height>
        </rect>
@@ -1250,7 +1425,7 @@
       <property name="geometry">
        <rect>
         <x>390</x>
-        <y>275</y>
+        <y>347</y>
         <width>60</width>
         <height>20</height>
        </rect>
@@ -1263,7 +1438,7 @@
       <property name="geometry">
        <rect>
         <x>460</x>
-        <y>275</y>
+        <y>347</y>
         <width>200</width>
         <height>20</height>
        </rect>
@@ -1288,7 +1463,7 @@
       <property name="geometry">
        <rect>
         <x>530</x>
-        <y>315</y>
+        <y>387</y>
         <width>220</width>
         <height>20</height>
        </rect>
@@ -1588,8 +1763,8 @@
    <widget class="CustomView" name="graphicsView">
     <property name="geometry">
      <rect>
-      <x>10</x>
-      <y>389</y>
+      <x>300</x>
+      <y>463</y>
       <width>600</width>
       <height>751</height>
      </rect>
@@ -1599,7 +1774,7 @@
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>360</y>
+      <y>434</y>
       <width>500</width>
       <height>20</height>
      </rect>
