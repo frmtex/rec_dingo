@@ -172,6 +172,10 @@ void InMemoryPipelineWorker::run()
                         RingFilter::remove_stripes(sino, params_.ringLevel, params_.ringSigma,
                                                     params_.ringOrder, params_.ringPad,
                                                     params_.ringMaskInnerRadius, params_.ringMaskOuterRadius);
+                    if (params_.largeStripeEnabled)
+                        RingFilter::remove_large_stripes(sino, params_.largeStripeSnr, params_.largeStripeWindow);
+                    if (params_.smallStripeEnabled)
+                        RingFilter::remove_small_stripes(sino, params_.smallStripeWindow);
 
                     cv::Mat slice = recon->reconstruct_slice(sino, angles, params_.circMaskRatio);
 
