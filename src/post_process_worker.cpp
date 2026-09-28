@@ -255,21 +255,44 @@ void PostProcessWorker::runHistogram()
         if (files.empty())
             throw std::runtime_error("No reconstructed slices found in reco/ - run Reconstruction first");
 
-        const size_t total = files.size();
-        const size_t wanted = std::min(total, static_cast<size_t>(std::max(1, params_.histogramMaxSlices)));
-        std::vector<fs::path> sample;
-        sample.reserve(wanted);
-        for (size_t k = 0; k < wanted; ++k) {
-            const size_t idx = (wanted == 1) ? total / 2 : (k * (total - 1) + (wanted - 1) / 2) / (wanted - 1);
-            sample.push_back(files[idx]);
-        }
-
-        auto loadSlice = [this](const fs::path& path) {
-            cv::Mat slice = readSlice(path);
+        computeHistogram(files.size(), [this, &files](size_t idx) {
+            cv::Mat slice = readSlice(files[idx]);
             if (params_.beamHardeningEnabled)
                 slice = BeamHardening::apply(slice, params_.bhC1, params_.bhC2, params_.bhC3);
             return slice;
-        };
+        });
+    } catch (const std::exception& e) {
+        emit failed(QString::fromStdString(e.what()));
+    }
+}
+
+void PostProcessWorker::runHistogramFromCache(std::vector<cv::Mat> slices)
+{
+    try {
+        if (slices.empty())
+            throw std::runtime_error("No reconstructed slices in memory - run the in-memory pipeline first");
+
+        computeHistogram(slices.size(), [this, &slices](size_t idx) {
+            cv::Mat slice = slices[idx];
+            if (params_.beamHardeningEnabled)
+                slice = BeamHardening::apply(slice, params_.bhC1, params_.bhC2, params_.bhC3);
+            return slice;
+        });
+    } catch (const std::exception& e) {
+        emit failed(QString::fromStdString(e.what()));
+    }
+}
+
+void PostProcessWorker::computeHistogram(size_t total, const std::function<cv::Mat(size_t)>& loadSlice)
+{
+    try {
+        const size_t wanted = std::min(total, static_cast<size_t>(std::max(1, params_.histogramMaxSlices)));
+        std::vector<size_t> sample;
+        sample.reserve(wanted);
+        for (size_t k = 0; k < wanted; ++k) {
+            const size_t idx = (wanted == 1) ? total / 2 : (k * (total - 1) + (wanted - 1) / 2) / (wanted - 1);
+            sample.push_back(idx);
+        }
 
         double lo = std::numeric_limits<double>::max();
         double hi = std::numeric_limits<double>::lowest();

@@ -3,6 +3,9 @@
 #include <QObject>
 #include <QString>
 #include <QVector>
+#include <functional>
+#include <opencv2/core.hpp>
+#include <vector>
 
 // Histogram of (a sample of) the reconstructed slices, as shown next to the 16-bit conversion
 // controls. counts are uniform bins spanning [lo, hi].
@@ -62,6 +65,11 @@ public slots:
     // Emits histogramReady for a sample of reco/ (with beam-hardening correction applied first if
     // enabled) - see Params::histogramMaxSlices. Doesn't write anything.
     void runHistogram();
+    // Same as runHistogram(), but samples from slices already in memory (e.g. the in-memory
+    // pipeline's own RAM-resident output - see InMemoryPipelineWorker::reconstructedSlices())
+    // instead of reading reco/*.tiff back off disk. slices must be in the same row order reco/
+    // would list them in.
+    void runHistogramFromCache(std::vector<cv::Mat> slices);
 
 signals:
     void progress(int percent, QString message);
@@ -71,6 +79,10 @@ signals:
 
 private:
     Params params_;
+    // Shared by runHistogram()/runHistogramFromCache(): samples up to histogramMaxSlices evenly
+    // spaced indices out of [0, total), loads each via loadSlice (already beam-hardening-corrected
+    // if applicable), and emits the resulting histogram.
+    void computeHistogram(size_t total, const std::function<cv::Mat(size_t)>& loadSlice);
 };
 
 Q_DECLARE_METATYPE(RecoHistogram)

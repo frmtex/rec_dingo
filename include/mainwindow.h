@@ -94,6 +94,18 @@ private:
     QThread *inmemory_thread = nullptr;
     InMemoryPipelineWorker *inmemory_worker = nullptr;
 
+    // The most recent in-memory run's reconstructed slices, kept around so a "Show histogram"
+    // click right afterward can sample them instead of reading reco/*.tiff back off disk. Cleared
+    // (valid=false) whenever reco/ might no longer match: a fresh dataset loaded, or either
+    // reconstruction path run again.
+    struct InMemoryRecoCache
+    {
+        bool valid = false;
+        QString workingPath;
+        std::vector<cv::Mat> slices;
+    };
+    InMemoryRecoCache inmemoryRecoCache_;
+
     // Updates workingpath/settings.ini in place with the current reconstruction settings (ROI,
     // binning, CoR/tilt, ring filters, FBP filter, circular mask) - called once corr/ or sino/
     // finishes writing, so a later slotFileOpen() on the same settings.ini restores them. The

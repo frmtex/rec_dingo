@@ -170,6 +170,7 @@ void MainWindow::slotFileOpen()
   if (!fileName.isEmpty())
   {
     workingpath = fileName;
+    inmemoryRecoCache_ = InMemoryRecoCache();
     QFile file(fileName);
     if ( !file.open(QIODevice::ReadOnly) ) {
     return;
@@ -708,6 +709,8 @@ void MainWindow::slot_run_reconstruction()
     // A full run rewrites sino/ on disk, which a cached preview built with StartStage::Sinograms
     // would otherwise reuse stale in-memory data instead of.
     preview_sino_cache = ReconstructionWorker::PreviewCache();
+    // ...and rewrites reco/, so any in-memory-pipeline cache of it is now stale too.
+    inmemoryRecoCache_ = InMemoryRecoCache();
 
     ReconstructionWorker::Params params = buildReconstructionParams();
 
@@ -753,6 +756,7 @@ void MainWindow::slot_run_inmemory()
     }
 
     preview_sino_cache = ReconstructionWorker::PreviewCache();
+    inmemoryRecoCache_ = InMemoryRecoCache();
 
     ReconstructionWorker::Params params = buildReconstructionParams();
 
@@ -766,6 +770,15 @@ void MainWindow::slot_run_inmemory()
 
     connect(inmemory_thread, &QThread::started, inmemory_worker, &InMemoryPipelineWorker::run);
     connect(inmemory_worker, &InMemoryPipelineWorker::progress, this, &MainWindow::slot_reco_progress);
+    connect(inmemory_worker, &InMemoryPipelineWorker::finished, this, [this]() {
+        // inmemory_worker is still alive here (deleteLater() below only runs once the event loop
+        // gets back around to it) - grab its RAM-resident output before it's gone.
+        if (inmemory_worker) {
+            inmemoryRecoCache_.valid = true;
+            inmemoryRecoCache_.workingPath = workingpath;
+            inmemoryRecoCache_.slices = inmemory_worker->reconstructedSlices();
+        }
+    });
     connect(inmemory_worker, &InMemoryPipelineWorker::finished, this, &MainWindow::slot_reco_finished);
     connect(inmemory_worker, &InMemoryPipelineWorker::failed, this, &MainWindow::slot_reco_failed);
     connect(inmemory_worker, &InMemoryPipelineWorker::finished, inmemory_thread, &QThread::quit);
@@ -1279,23 +1292,37 @@ void MainWindow::slot_load_reco_histogram()
         statusBar()->showMessage(tr("Load a dataset before showing the histogram"), 3000);
         return;
     }
-    if (reco_thread || post_thread || corr_scan_thread) {
+    if (reco_thread || post_thread || corr_scan_thread || inmemory_thread) {
         statusBar()->showMessage(tr("A reconstruction, preview, or post-processing run is already in progress"), 3000);
         return;
     }
 
     PostProcessWorker::Params params = buildPostProcessParams();
 
+    // Right after an in-memory run, its output is still sitting in RAM - sample that directly
+    // instead of reading reco/*.tiff back off disk. Stale as soon as anything rewrites reco/ (see
+    // the cache-clearing points in slotFileOpen()/slot_run_reconstruction()/slot_run_inmemory()).
+    const bool useMemoryCache = inmemoryRecoCache_.valid && inmemoryRecoCache_.workingPath == workingpath;
+
     ui->pushButton_runPostProcess->setEnabled(false);
     loadHistButton_->setEnabled(false);
     ui->progressBar_reco->setValue(0);
-    ui->label_post_status->setText(tr("Sampling reco/ for the histogram..."));
+    ui->label_post_status->setText(useMemoryCache ? tr("Sampling the in-memory reconstruction for the histogram...")
+                                                   : tr("Sampling reco/ for the histogram..."));
 
     post_thread = new QThread(this);
     post_worker = new PostProcessWorker(params);
     post_worker->moveToThread(post_thread);
 
-    connect(post_thread, &QThread::started, post_worker, &PostProcessWorker::runHistogram);
+    if (useMemoryCache) {
+        std::vector<cv::Mat> slices = inmemoryRecoCache_.slices;
+        PostProcessWorker* worker = post_worker;
+        connect(post_thread, &QThread::started, worker, [worker, slices]() {
+            worker->runHistogramFromCache(slices);
+        });
+    } else {
+        connect(post_thread, &QThread::started, post_worker, &PostProcessWorker::runHistogram);
+    }
     connect(post_worker, &PostProcessWorker::progress, this, &MainWindow::slot_post_progress);
     connect(post_worker, &PostProcessWorker::histogramReady, this, &MainWindow::slot_reco_histogram_ready);
     connect(post_worker, &PostProcessWorker::failed, this, &MainWindow::slot_post_failed);
