@@ -49,7 +49,6 @@ public slots:
     void slot_clear_cor_roi();
     void slot_find_cor();
     void slot_run_reconstruction();
-    void slot_run_inmemory();
     void slot_run_preview();
     void slot_show_preview_slice(int index);
     void slot_run_post_process();
@@ -88,9 +87,11 @@ private:
     int spot_kernel_size_from_ui() const;
     ReconstructionWorker::Params buildReconstructionParams();
 
-    // "Run In-Memory" reuses reco_thread's slot/signal wiring (slot_reco_progress/finished/failed)
-    // since InMemoryPipelineWorker's signals have the same shapes - but runs on its own QThread, so
-    // it's tracked separately and still counts as "busy" everywhere reco_thread is checked.
+    // "Run Reconstruction" (slot_run_reconstruction) runs InMemoryPipelineWorker on its own
+    // QThread/worker pair, reusing reco_thread's slot/signal wiring (slot_reco_progress/finished/
+    // failed) since InMemoryPipelineWorker's signals have the same shapes - kept separate from
+    // reco_thread/reco_worker (which now only runs ReconstructionWorker::runPreview()) so both can
+    // be told apart, and both still count as "busy" everywhere either is checked.
     QThread *inmemory_thread = nullptr;
     InMemoryPipelineWorker *inmemory_worker = nullptr;
 

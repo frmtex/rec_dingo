@@ -15,7 +15,7 @@
 // One instance is meant to be constructed once per reconstruction run (sized by the slice's
 // rows/cols, which are constant for that whole run) and reused across every slice - mirroring
 // FbpReconstructor/FbpCudaBackend's design, including the reason why: this class's device buffers
-// are shared, mutable, per-instance state, and ReconstructionWorker::run() calls it from its
+// are shared, mutable, per-instance state, and InMemoryPipelineWorker::run() calls it from its
 // multi-threaded per-row pool exactly like it does FbpReconstructor. Every call is internally
 // serialized with a mutex (the GPU is one device anyway) so that's safe.
 class PolarRingCudaBackend

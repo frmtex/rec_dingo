@@ -65,9 +65,9 @@ std::vector<double> InMemoryPipelineWorker::buildAngles() const
 void InMemoryPipelineWorker::run()
 {
     try {
-        if (params_.startStage == ReconstructionWorker::StartStage::Sinograms)
-            throw std::runtime_error("In-memory pipeline has no on-disk sinograms to resume from - "
-                                      "pick Raw scan or Corrected projections as the start stage");
+        if (params_.startStage == ReconstructionWorker::StartStage::CorrectedProjections
+            && !proj_->hasCorrectedScan())
+            throw std::runtime_error("Run Correct Scan first - no corrected projections in memory");
 
         int x, y, w, h;
         params_.roiRect.getRect(&x, &y, &w, &h);
@@ -76,18 +76,17 @@ void InMemoryPipelineWorker::run()
         const int n_cols = w / binning;
 
         // --- Stage 1: read + correct every projection, tilt-correct, keep entirely in RAM
-        // (no corr/ written) - mirrors ReconstructionWorker::run()'s Stage 1 branch exactly:
-        // StartStage::RawScan is flat-field + -log only (no phase retrieval, matching
-        // get_projection_corr()'s use there - run_scan()'s corr/ output is a DIFFERENT, richer
-        // correction that a plain "raw scan" reconstruction never applied even on the disk path);
-        // StartStage::CorrectedProjections gets the full correction (spot filter + flat field +
-        // intensity correction + phase retrieval) via get_projection_corrected_full(), computed
-        // fresh from scan/ since there's no on-disk corr/ to read back in this mode.
+        // (no corr/ written). StartStage::RawScan is flat-field + -log only (no phase retrieval,
+        // matching get_projection_corr()'s use here - a plain "raw scan" reconstruction never
+        // applies the richer correction below). StartStage::CorrectedProjections reads the full
+        // correction (spot filter + flat field + intensity correction + phase retrieval) from
+        // Proj_correction's RAM cache - populated by a prior "Correct Scan" - rather than
+        // recomputing it, since that's the whole point of that button.
         std::vector<cv::Mat> correctedProjections(params_.n_angles);
         for (int a = 0; a < params_.n_angles; ++a) {
             cv::Mat proj;
             if (params_.startStage == ReconstructionWorker::StartStage::CorrectedProjections) {
-                proj = proj_->get_projection_corrected_full(a);
+                proj = proj_->correctedProjection(a).clone();
             } else {
                 proj = proj_->get_projection_corr(a);
                 cv::max(proj, 1e-6f, proj);
@@ -120,9 +119,8 @@ void InMemoryPipelineWorker::run()
         }
         correctedProjections.clear(); // no longer needed - free before the reconstruction pass below
 
-        // --- Stage 3: shift to CoR, ring-filter, FBP, polar ring removal, write reco/ - identical
-        // logic and thread-pool pattern to ReconstructionWorker::run()'s Stage 2/3, reading each
-        // row's sinogram out of the in-RAM vector instead of a SinogramReader. Different threads
+        // --- Stage 3: shift to CoR, ring-filter, FBP, polar ring removal, write reco/ - each row
+        // reads its sinogram out of the in-RAM vector built in Stage 2 above. Different threads
         // claim different (unique) row indices, so concurrent access to different sinograms[row]
         // elements is safe - the same guarantee SinogramReader's per-file reads gave, just RAM-backed.
         std::unique_ptr<SliceReconstructor> recon = make_reconstructor(n_cols, params_);

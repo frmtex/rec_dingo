@@ -8,7 +8,7 @@ CorrScanWorker::CorrScanWorker(Proj_correction* proj_correction, QObject* parent
 void CorrScanWorker::run()
 {
     try {
-        proj_->run_scan([this](int done, int total) {
+        proj_->correctScan([this](int done, int total) {
             int pct = total > 0 ? static_cast<int>(100.0 * done / total) : 0;
             emit progress(pct, QString("Correcting projection %1/%2").arg(done).arg(total));
         });

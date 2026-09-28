@@ -87,7 +87,6 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->pushButton_clearRoi, SIGNAL(clicked()), this, SLOT(slot_clear_cor_roi()));
     connect(ui->pushButton_findCor, SIGNAL(clicked()), this, SLOT(slot_find_cor()));
     connect(ui->pushButton_runReco, SIGNAL(clicked()), this, SLOT(slot_run_reconstruction()));
-    connect(ui->pushButton_runInMemory, SIGNAL(clicked()), this, SLOT(slot_run_inmemory()));
 
     connect(ui->pushButton_preview, SIGNAL(clicked()), this, SLOT(slot_run_preview()));
     connect(ui->comboBox_previewSlice, SIGNAL(currentIndexChanged(int)), this, SLOT(slot_show_preview_slice(int)));
@@ -426,8 +425,8 @@ void MainWindow::slot_corr_scan()
         return;
     }
 
-    // run_scan() rewrites corr/ on disk, which a cached preview built with
-    // StartStage::CorrectedProjections would otherwise reuse stale data from.
+    // correctScan() replaces whatever's in Proj_correction's RAM cache, which a cached preview
+    // built with StartStage::CorrectedProjections would otherwise reuse stale data from.
     preview_sino_cache = ReconstructionWorker::PreviewCache();
 
     // Re-apply in case any of these were changed after "Load first set" ran.
@@ -629,7 +628,6 @@ ReconstructionWorker::Params MainWindow::buildReconstructionParams()
     params.workingPath = workingpath;
     switch (ui->comboBox_startStage->currentIndex()) {
     case 1: params.startStage = ReconstructionWorker::StartStage::CorrectedProjections; break;
-    case 2: params.startStage = ReconstructionWorker::StartStage::Sinograms; break;
     default: params.startStage = ReconstructionWorker::StartStage::RawScan; break;
     }
     params.n_angles = angles;
@@ -705,11 +703,14 @@ void MainWindow::slot_run_reconstruction()
         statusBar()->showMessage(tr("A reconstruction, preview, or post-processing run is already in progress"), 3000);
         return;
     }
+    if (ui->comboBox_startStage->currentIndex() == 1 && !first_set->hasCorrectedScan()) {
+        statusBar()->showMessage(tr("Run Correct Scan first - no corrected projections in memory"), 5000);
+        return;
+    }
 
-    // A full run rewrites sino/ on disk, which a cached preview built with StartStage::Sinograms
-    // would otherwise reuse stale in-memory data instead of.
     preview_sino_cache = ReconstructionWorker::PreviewCache();
-    // ...and rewrites reco/, so any in-memory-pipeline cache of it is now stale too.
+    // A run consumes and then frees the corrected-projections cache (see the finished handler
+    // below), so any cached preview built against it is about to go stale either way.
     inmemoryRecoCache_ = InMemoryRecoCache();
 
     ReconstructionWorker::Params params = buildReconstructionParams();
@@ -717,52 +718,6 @@ void MainWindow::slot_run_reconstruction()
     set_reconstruction_controls_enabled(false);
     ui->progressBar_reco->setValue(0);
     ui->label_reco_status->setText(tr("Starting..."));
-
-    reco_thread = new QThread(this);
-    reco_worker = new ReconstructionWorker(first_set, params, ReconstructionWorker::PreviewCache());
-    reco_worker->moveToThread(reco_thread);
-
-    connect(reco_thread, &QThread::started, reco_worker, &ReconstructionWorker::run);
-    connect(reco_worker, &ReconstructionWorker::progress, this, &MainWindow::slot_reco_progress);
-    connect(reco_worker, &ReconstructionWorker::finished, this, &MainWindow::slot_reco_finished);
-    connect(reco_worker, &ReconstructionWorker::failed, this, &MainWindow::slot_reco_failed);
-    connect(reco_worker, &ReconstructionWorker::finished, reco_thread, &QThread::quit);
-    connect(reco_worker, &ReconstructionWorker::failed, reco_thread, &QThread::quit);
-    connect(reco_thread, &QThread::finished, reco_worker, &QObject::deleteLater);
-    connect(reco_thread, &QThread::finished, reco_thread, &QObject::deleteLater);
-    connect(reco_thread, &QThread::finished, this, [this]() {
-        reco_thread = nullptr;
-        reco_worker = nullptr;
-    });
-
-    reco_thread->start();
-}
-
-void MainWindow::slot_run_inmemory()
-{
-    if (!first_set) {
-        statusBar()->showMessage(tr("Load first set before running the in-memory pipeline"), 3000);
-        return;
-    }
-    if (reco_thread || post_thread || corr_scan_thread || inmemory_thread) {
-        statusBar()->showMessage(tr("A reconstruction, preview, or post-processing run is already in progress"), 3000);
-        return;
-    }
-    if (ui->comboBox_startStage->currentIndex() == 2) {
-        statusBar()->showMessage(
-            tr("In-memory pipeline has no on-disk sinograms to resume from - pick Raw scan or Corrected projections"),
-            5000);
-        return;
-    }
-
-    preview_sino_cache = ReconstructionWorker::PreviewCache();
-    inmemoryRecoCache_ = InMemoryRecoCache();
-
-    ReconstructionWorker::Params params = buildReconstructionParams();
-
-    set_reconstruction_controls_enabled(false);
-    ui->progressBar_reco->setValue(0);
-    ui->label_reco_status->setText(tr("Starting (in-memory)..."));
 
     inmemory_thread = new QThread(this);
     inmemory_worker = new InMemoryPipelineWorker(first_set, params);
@@ -778,6 +733,11 @@ void MainWindow::slot_run_inmemory()
             inmemoryRecoCache_.workingPath = workingpath;
             inmemoryRecoCache_.slices = inmemory_worker->reconstructedSlices();
         }
+        // The corrected-projections cache (and this run's sinograms, which never outlived the
+        // worker's own stack to begin with) has done its job - free it rather than leaving it
+        // resident until the next Correct Scan overwrites it. Only on success: a failed run should
+        // stay retryable without redoing Correct Scan.
+        first_set->clearCorrectedScan();
     });
     connect(inmemory_worker, &InMemoryPipelineWorker::finished, this, &MainWindow::slot_reco_finished);
     connect(inmemory_worker, &InMemoryPipelineWorker::failed, this, &MainWindow::slot_reco_failed);
@@ -817,7 +777,6 @@ void MainWindow::slot_reco_failed(QString error)
 void MainWindow::set_reconstruction_controls_enabled(bool enabled)
 {
     ui->pushButton_runReco->setEnabled(enabled);
-    ui->pushButton_runInMemory->setEnabled(enabled);
     ui->pushButton_findCor->setEnabled(enabled);
     ui->pushButton_addRoi->setEnabled(enabled);
     ui->pushButton_clearRoi->setEnabled(enabled);
@@ -832,6 +791,10 @@ void MainWindow::slot_run_preview()
     }
     if (reco_thread || post_thread || corr_scan_thread || inmemory_thread) {
         statusBar()->showMessage(tr("A reconstruction, preview, or post-processing run is already in progress"), 3000);
+        return;
+    }
+    if (ui->comboBox_startStage->currentIndex() == 1 && !first_set->hasCorrectedScan()) {
+        statusBar()->showMessage(tr("Run Correct Scan first - no corrected projections in memory"), 5000);
         return;
     }
 
@@ -1299,9 +1262,9 @@ void MainWindow::slot_load_reco_histogram()
 
     PostProcessWorker::Params params = buildPostProcessParams();
 
-    // Right after an in-memory run, its output is still sitting in RAM - sample that directly
+    // Right after a reconstruction run, its output is still sitting in RAM - sample that directly
     // instead of reading reco/*.tiff back off disk. Stale as soon as anything rewrites reco/ (see
-    // the cache-clearing points in slotFileOpen()/slot_run_reconstruction()/slot_run_inmemory()).
+    // the cache-clearing points in slotFileOpen()/slot_run_reconstruction()).
     const bool useMemoryCache = inmemoryRecoCache_.valid && inmemoryRecoCache_.workingPath == workingpath;
 
     ui->pushButton_runPostProcess->setEnabled(false);

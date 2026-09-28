@@ -73,7 +73,6 @@ SOURCES += \
     src/spot_filter.cpp \
     src/tilt_correction.cpp \
     src/rotation_axis.cpp \
-    src/sinogram_io.cpp \
     src/fbp_reconstructor.cpp \
     src/gridrec_reconstructor.cpp \
     src/ring_filter.cpp \
@@ -92,7 +91,6 @@ HEADERS += \
     include/spot_filter.h \
     include/tilt_correction.h \
     include/rotation_axis.h \
-    include/sinogram_io.h \
     include/fbp_reconstructor.h \
     include/gridrec_reconstructor.h \
     include/slice_reconstructor.h \

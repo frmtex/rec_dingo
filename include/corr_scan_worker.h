@@ -4,8 +4,8 @@
 #include <QString>
 #include "proj_correction.h"
 
-// Runs Proj_correction::run_scan() (flat-field + spot filter + phase retrieval over every raw
-// projection, writing corr/) on a worker thread, reporting progress via signals - mirrors
+// Runs Proj_correction::correctScan() (flat-field + spot filter + phase retrieval over every raw
+// projection, kept in RAM) on a worker thread, reporting progress via signals - mirrors
 // ReconstructionWorker's thread-and-signal pattern.
 class CorrScanWorker : public QObject
 {

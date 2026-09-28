@@ -5,6 +5,7 @@
 #include <opencv2/opencv.hpp>
 #include <functional>
 #include <memory>
+#include <vector>
 #if !defined(__APPLE__)
 #include "spot_filter_cuda.h"
 #include "phase_retrieval_cuda.h"
@@ -20,42 +21,58 @@ public:
     {
         data_path = _data_path;
         roi_rect = _roi_rect;
+        clearCorrectedScan();
     }
-    // Spot (hot/dead pixel) filter window size, applied in load_op_di/get_projection_corr/run_scan.
-    void setSpotKernelSize(int k) { spot_kernel_size = k; }
+    // Spot (hot/dead pixel) filter window size, applied in load_op_di/get_projection_corr/correctScan.
+    // Guarded: correctScan()'s cache is only invalidated when the value actually changes, since
+    // callers (buildReconstructionParams(), slot_find_cor()) re-apply the current UI value
+    // defensively on every Preview/Reconstruction click.
+    void setSpotKernelSize(int k) { if (k != spot_kernel_size) { spot_kernel_size = k; clearCorrectedScan(); } }
     // NxN block-average downsampling (1 = disabled), applied immediately after each image is
     // read and cropped to the ROI - before spot filtering, flat-fielding, or phase retrieval - so
-    // every later step in this class runs on the smaller image too.
-    void setBinning(int b) { binning = b; }
+    // every later step in this class runs on the smaller image too. Guarded, same reasoning as
+    // setSpotKernelSize above.
+    void setBinning(int b) { if (b != binning) { binning = b; clearCorrectedScan(); } }
     // Runs spot filtering and phase retrieval on the GPU (SpotFilterCudaBackend/
     // PhaseRetrievalCudaBackend) instead of the CPU (Spot_filter/phase_retrieval) - see
     // applySpotCorrection/applyPhaseRetrieval. The GPU backends are (re)built lazily, on first use
     // or whenever the image size changes. No CUDA build on macOS (see the __APPLE__ guards below),
     // so there this is a harmless no-op and applySpotCorrection/applyPhaseRetrieval always take the
     // CPU path regardless of the flag - same pattern as ReconstructionWorker's polar ring GPU path.
-    void setUseGpu(bool useGpu) { use_gpu = useGpu; }
+    // Guarded, same reasoning as setSpotKernelSize above.
+    void setUseGpu(bool useGpu) { if (useGpu != use_gpu) { use_gpu = useGpu; clearCorrectedScan(); } }
     // Region of the corrected (cropped/binned) image containing only the primary beam, no sample -
     // used to correct for beam-intensity fluctuation over the course of a scan. Immediately reads
     // and corrects projection 0 to establish the reference mean; every projection returned by
-    // get_projection_corr() and run_scan() afterwards (including index 0 itself) is rescaled so its
-    // own mean in this region matches that reference. Coordinates are in the same pixel space as
-    // im_show / get_projection_corr()'s output (post-crop, post-binning) - re-pick after changing
-    // binning. Throws std::runtime_error if roi is empty or projection 0 can't be read.
+    // get_projection_corr() and correctScan() afterwards (including index 0 itself) is rescaled so
+    // its own mean in this region matches that reference. Coordinates are in the same pixel space
+    // as im_show / get_projection_corr()'s output (post-crop, post-binning) - re-pick after
+    // changing binning. Throws std::runtime_error if roi is empty or projection 0 can't be read.
     void setIntensityRoi(const QRect& roi);
     void load_op_di();
     void get_first_image_corr();
-    // progressCallback, if given, is invoked as (doneCount, totalCount) after each projection is
-    // written - intended for a caller on another thread to translate into a Qt progress signal.
-    void run_scan(const std::function<void(int, int)>& progressCallback = nullptr);
+    // Computes the fully-corrected (spot filter + flat field + intensity correction + phase
+    // retrieval) projection for every angle - the same per-projection work
+    // get_projection_corrected_full() does - and keeps the results in RAM (correctedProjection())
+    // instead of writing them to disk. Deliberately NOT tilt-corrected: tilt is retuned
+    // interactively afterward (via Preview), and baking it in here would force a re-run of this
+    // whole pass on every tilt tweak - callers apply TiltCorrection::apply() themselves, fresh,
+    // each time they read from the cache. progressCallback, if given, is invoked as
+    // (doneCount, totalCount) after each projection is corrected - intended for a caller on
+    // another thread to translate into a Qt progress signal.
+    void correctScan(const std::function<void(int, int)>& progressCallback = nullptr);
+    bool hasCorrectedScan() const { return !correctedProjections_.empty(); }
+    int correctedScanCount() const { return static_cast<int>(correctedProjections_.size()); }
+    const cv::Mat& correctedProjection(int index) const { return correctedProjections_.at(static_cast<size_t>(index)); }
+    // Called once a reconstruction run has consumed correctScan()'s output, so it doesn't sit in
+    // RAM after it's no longer needed. Also called automatically whenever a setting that would
+    // change what correctScan() computes changes (see the setters above).
+    void clearCorrectedScan() { correctedProjections_.clear(); correctedProjections_.shrink_to_fit(); }
     // Flat-field-corrected projection at an arbitrary index (CV_32FC1, no display scaling).
     cv::Mat get_projection_corr(int index);
-    // Reads back projection `index` from <data_path>/corr/, already flat-field + phase-retrieval
-    // corrected by run_scan() (CV_32FC1, no further correction applied).
-    cv::Mat get_projection_from_corr(int index);
-    // Same result run_scan() writes to <data_path>/corr/ for this index (spot filter + flat field
-    // + intensity correction + phase retrieval), computed directly from scan/ without touching
-    // corr/ at all - shared by run_scan() (which writes it) and any in-memory caller that wants
-    // the fully corrected projection without a disk round-trip.
+    // Same result correctScan() caches for this index (spot filter + flat field + intensity
+    // correction + phase retrieval), computed directly from scan/ - shared by correctScan() and
+    // any caller that wants the fully corrected projection without going through the cache.
     cv::Mat get_projection_corrected_full(int index);
 
     cv::Mat  im_show;
@@ -66,6 +83,7 @@ private:
     QRect roi_rect;
     int spot_kernel_size = 5;
     int binning = 1;
+    std::vector<cv::Mat> correctedProjections_;
 
     QRect intensity_roi;
     bool intensity_roi_enabled = false;

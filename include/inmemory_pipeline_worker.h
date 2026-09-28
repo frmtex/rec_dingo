@@ -5,21 +5,21 @@
 #include "proj_correction.h"
 #include "reconstruction_worker.h"
 
-// Runs the same scan -> corrected-projections -> sinograms -> FBP -> reco/ pipeline as
-// CorrScanWorker + ReconstructionWorker, but keeps the corrected-projection and sinogram stages
-// entirely in RAM instead of writing corr/ and sino/ to disk - for large-RAM machines where the
-// disk round-trip in the middle of the pipeline is pure overhead (measured: on a typical dataset,
-// e.g. 1201 angles x 1960 x 1960, the projection stack alone is ~18GB as float32 - trivial against
-// a 1TB machine, not something to default to generally). scan/ob/di are still read from disk, and
-// reco/ (and post/, via the existing separate Post Processing step) are still written to disk as
-// the deliverable output - but every reconstructed slice also stays resident in RAM afterward (see
+// Runs the sole reconstruction path: scan -> corrected-projections -> sinograms -> FBP -> reco/,
+// keeping the corrected-projection and sinogram stages entirely in RAM instead of writing corr/
+// and sino/ to disk (measured: on a typical dataset, e.g. 1201 angles x 1960 x 1960, the
+// projection stack alone is ~18GB as float32 - trivial against a machine with enough RAM to run
+// this app on such a dataset at all). scan/ob/di are still read from disk, and reco/ (and post/,
+// via the existing separate Post Processing step) are still written to disk as the deliverable
+// output - but every reconstructed slice also stays resident in RAM afterward (see
 // reconstructedSlices()), on top of the projection/sinogram RAM above, so Post Processing's
 // histogram sampling can reuse them instead of reading reco/ back.
 //
-// Reuses ReconstructionWorker::Params (rather than a parallel struct) so this stays easy to unify
-// with the disk-streaming path later behind a runtime toggle. Only StartStage::RawScan and
-// StartStage::CorrectedProjections make sense here - there's no on-disk sino/ to resume from in a
-// mode whose whole point is never writing it; run() throws if StartStage::Sinograms is requested.
+// Reuses ReconstructionWorker::Params (rather than a parallel struct) since both classes are part
+// of the same overall pipeline (ReconstructionWorker::runPreview() handles the fast B/M/T preview;
+// this handles the full run). For StartStage::CorrectedProjections, Stage 1 reads from
+// Proj_correction::correctedProjection() (populated by a prior "Correct Scan") instead of
+// recomputing the correction - run() throws if that cache is empty.
 class InMemoryPipelineWorker : public QObject
 {
     Q_OBJECT

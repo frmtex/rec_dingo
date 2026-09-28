@@ -6,7 +6,6 @@
 #include <QString>
 #include <QFileDialog>
 #include <QRect>
-#include <filesystem>
 #include <fftw3.h>
 #include <vector>
 #include <cmath>
@@ -90,8 +89,6 @@ std::vector<float> phase_retrieval(const std::vector<float>& image,
     fftwf_free(data);
     return phret;
 }
-
-namespace fs = std::filesystem;
 
 void Proj_correction::applySpotCorrection(cv::Mat& img, int kernel_size, int threshold)
 {
@@ -232,6 +229,7 @@ void Proj_correction::setIntensityRoi(const QRect& roi)
     cv::Mat reference = get_projection_corr(0);
     intensity_reference = roi_mean(reference);
     intensity_roi_enabled = true;
+    clearCorrectedScan();
 }
 
 cv::Mat Proj_correction::get_projection_corr(int index)
@@ -262,19 +260,6 @@ cv::Mat Proj_correction::get_projection_corr(int index)
     }
 
     return im_out;
-}
-
-cv::Mat Proj_correction::get_projection_from_corr(int index)
-{
-    QString corr_path = data_path + "/corr/";
-    QDir corr_dir = corr_path;
-    QStringList corr_list = corr_dir.entryList(QDir::Files | QDir::NoDotAndDotDot);
-
-    QString filename = corr_path + corr_list.at(index);
-    cv::Mat img = cv::imread(filename.toStdString(), cv::IMREAD_UNCHANGED);
-    if (img.empty())
-        throw std::runtime_error(("Proj_correction::get_projection_from_corr: could not read " + filename).toStdString());
-    return img;
 }
 
 void Proj_correction::get_first_image_corr(){
@@ -348,24 +333,19 @@ cv::Mat Proj_correction::get_projection_corrected_full(int index)
     return im_out_pad(cropRoi).clone();
 }
 
-void Proj_correction::run_scan(const std::function<void(int, int)>& progressCallback){
+void Proj_correction::correctScan(const std::function<void(int, int)>& progressCallback){
 
     QString proj_path = data_path + "/scan/";
-    QString proj_out = data_path + "/corr/";
-
-    fs::create_directories(proj_out.toStdString());
-
     QDir proj_dir = proj_path;
     QStringList proj_list =  proj_dir.entryList(QDir::Files | QDir::NoDotAndDotDot);
 
+    std::vector<cv::Mat> corrected(static_cast<size_t>(proj_list.size()));
     for (int i = 0; i < proj_list.size(); ++i) {
-        cv::Mat im_out_final = get_projection_corrected_full(i);
-
-        QString filename_out = proj_out + proj_list.at(i);
-        cv::imwrite(filename_out.toStdString(), im_out_final);
+        corrected[static_cast<size_t>(i)] = get_projection_corrected_full(i);
 
         if (progressCallback)
             progressCallback(i + 1, proj_list.size());
     }
+    correctedProjections_ = std::move(corrected);
 
 };

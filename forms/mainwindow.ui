@@ -276,6 +276,9 @@
         <height>32</height>
        </rect>
       </property>
+      <property name="toolTip">
+       <string>Corrects every projection (spot filter + flat field + intensity correction + phase retrieval) and keeps the result in RAM - nothing is written to disk. Needed before Preview/Run Reconstruction can use Start From = Corrected projections; not needed for Raw scan. The RAM copy is freed once Run Reconstruction has used it.</string>
+      </property>
       <property name="text">
        <string>Correct Scan</string>
       </property>
@@ -1327,24 +1330,11 @@
         <height>24</height>
        </rect>
       </property>
+      <property name="toolTip">
+       <string>Runs corrected projections (from Correct Scan, or computed fresh for Raw scan) -&gt; sinograms -&gt; reconstruction entirely in RAM, without writing corr/ or sino/ to disk. reco/ is still written as usual. Frees the corrected-projections cache from RAM once this completes.</string>
+      </property>
       <property name="text">
        <string>Run Reconstruction</string>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="pushButton_runInMemory">
-      <property name="geometry">
-       <rect>
-        <x>20</x>
-        <y>315</y>
-        <width>150</width>
-        <height>24</height>
-       </rect>
-      </property>
-      <property name="toolTip">
-       <string>Runs scan -&gt; corrected projections -&gt; sinograms -&gt; reconstruction as one continuous in-memory pass, without writing corr/ or sino/ to disk - for large-RAM machines where that disk round-trip is pure overhead. reco/ is still written as usual. Requires Start From = Raw scan or Corrected projections (there's nothing on disk to resume from otherwise).</string>
-      </property>
-      <property name="text">
-       <string>Run In-Memory</string>
       </property>
      </widget>
      <widget class="QLabel" name="label_fbpFilter">
@@ -1466,12 +1456,7 @@
       </item>
       <item>
        <property name="text">
-        <string>Corrected projections (corr/)</string>
-       </property>
-      </item>
-      <item>
-       <property name="text">
-        <string>Sinograms (sino/)</string>
+        <string>Corrected projections (from Correct Scan)</string>
        </property>
       </item>
      </widget>

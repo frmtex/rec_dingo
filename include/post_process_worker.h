@@ -18,7 +18,7 @@ struct RecoHistogram
     int slicesTotal = 0;
 };
 
-// Runs on the already-reconstructed slices in reco/ (written by ReconstructionWorker::run()),
+// Runs on the already-reconstructed slices in reco/ (written by InMemoryPipelineWorker::run()),
 // writing results to post/ so the original float32 data is never overwritten and post-processing
 // can be re-run with different settings without re-reconstructing. Runs on a worker thread.
 class PostProcessWorker : public QObject

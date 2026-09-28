@@ -9,23 +9,21 @@
 #include "fbp_reconstructor.h"
 #include "gridrec_reconstructor.h"
 
-// Runs the full low-RAM reconstruction pipeline (tilt-correct + stream
-// sinograms to SSD, then read back sequentially: CoR shift -> ring filter ->
-// FBP -> polar ring removal -> write slice) on a worker thread, reporting
-// progress via signals.
-// Only ever holds one projection or one sinogram/slice in memory at a time.
+// Produces the fast 3-row B/M/T preview (CoR shift -> ring filter -> FBP -> polar ring removal)
+// used to retune CoR/tilt/ring-filter settings before committing to a full reconstruction - see
+// InMemoryPipelineWorker for the full run, which is the only reconstruction path now (this class
+// used to also stream a full disk-based reconstruction; that path was retired in favor of it).
 class ReconstructionWorker : public QObject
 {
     Q_OBJECT
 
 public:
-    // Where to enter the pipeline. CorrectedProjections and Sinograms let the user re-run later
-    // stages (e.g. to retune ring-filter/CoR settings) without redoing the expensive earlier ones.
+    // Where to enter the pipeline. CorrectedProjections lets the user retune ring-filter/CoR
+    // settings against Correct Scan's RAM-cached output without redoing that (expensive) step.
     enum class StartStage
     {
-        RawScan,               // scan/ -> flat-field + (-log) + tilt-correct + write sino/
-        CorrectedProjections,  // corr/ (already flat-field + phase-retrieval corrected) -> tilt-correct + write sino/
-        Sinograms              // sino/ already has tilt-corrected, log-transformed data -> skip straight to CoR/ring/FBP
+        RawScan,               // scan/ -> flat-field + (-log) + tilt-correct
+        CorrectedProjections   // Proj_correction::correctScan()'s RAM cache -> tilt-correct
     };
 
     // Which slice reconstructor to run in the CoR/ring-filter -> reconstruct tail. Gridrec is the
@@ -97,16 +95,14 @@ public:
         ReconAlgorithm algorithm = ReconAlgorithm::Fbp;
         FbpFilterType fbpFilter = FbpFilterType::Hamming; // ramp/window filter type, used by both algorithms
         double circMaskRatio = 0.995;
-        int chunkRows = 128;
         // 1/2/3 = NxN block-average downsampling. The actual resizing happens inside
         // proj_correction (Proj_correction::setBinning), applied right after each image is read
         // and cropped - so it also speeds up spot filtering, flat-fielding, and phase retrieval,
-        // not just the stages below. Only meaningful for RawScan/CorrectedProjections; ignored
-        // when starting from Sinograms, since sino/ is already at whatever resolution it was
-        // written at. This value must be set on proj_correction (via setBinning) to match before
-        // run()/runPreview() is called - it's only used here to size n_rows/n_cols. corOffset and
-        // the ring-mask radii are pixel values the caller measures/finds at whatever binning is
-        // currently active, so they need no separate rescaling here.
+        // not just the stages below. This value must be set on proj_correction (via setBinning) to
+        // match before runPreview() (or InMemoryPipelineWorker::run()) is called - it's only used
+        // here to size n_rows/n_cols. corOffset and the ring-mask radii are pixel values the caller
+        // measures/finds at whatever binning is currently active, so they need no separate
+        // rescaling here.
         int binning = 1;
     };
 
@@ -134,21 +130,19 @@ public:
         bool matches(const Params& p) const;
     };
 
-    // proj_correction is not owned and must remain valid (and untouched by other
-    // threads) for the duration of run(). inputCache is only consulted by runPreview(); pass a
-    // default-constructed one (valid=false) to always rebuild, which is what run() effectively
-    // does anyway since it doesn't use this cache at all.
+    // proj_correction is not owned and must remain valid (and untouched by other threads) for the
+    // duration of runPreview(). inputCache lets a call reuse a previous one's sinograms when only
+    // CoR/ring-filter/FBP-filter/circular-mask settings changed; pass a default-constructed one
+    // (valid=false) to always rebuild.
     ReconstructionWorker(Proj_correction* proj_correction, Params params,
                           PreviewCache inputCache, QObject* parent = nullptr);
 
 public slots:
-    void run();
     // Reconstructs only 3 rows - at 10%, 50%, and 90% of the ROI's height (in that order), not
     // the very first/last row, since those often fall outside the sample - so the user can
     // sanity-check CoR/tilt and ring-filter settings without waiting for a full reconstruction.
-    // When starting from Sinograms, this just reads those 3 rows back from sino/ (cheap); otherwise
-    // it still reads every projection once (each row needs a sample from every angle) but skips
-    // writing any sinograms to disk and skips FBP for every row but these 3.
+    // Reads every projection once (each row needs a sample from every angle) but never writes
+    // anything to disk and only runs FBP for these 3 rows.
     void runPreview();
 
 signals:
