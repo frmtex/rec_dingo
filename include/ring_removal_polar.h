@@ -41,6 +41,17 @@
 //  5. Inverse-transform the filtered polar buffer (now an estimate of just
 //     the ring pattern) back to Cartesian and subtract it from the original
 //     slice.
+// Smallest arc length (in pixels, at a column's radius) the azimuthal mean filter may span. Near the
+// rotation axis a fixed angular window covers almost no pixels (at radius r, 20 degrees is only
+// ~0.35*r pixels of arc), so the "ring estimate" there is just the local texture, and subtracting
+// it removes that texture along the angular direction while leaving it along the radial one - a
+// starburst of radial streaks around the axis (measured out to ~60 px). The window is therefore
+// widened until it spans at least this much arc: ~64 px is the smallest that makes the streaks
+// disappear while still following partial ring arcs (a larger value averages them away). Inside
+// r ~ kPolarMinAzimuthalArcPx/(2*pi) it is the whole circle, which is right for a ring that small.
+// Shared by the CPU and CUDA implementations so they agree.
+inline constexpr double kPolarMinAzimuthalArcPx = 64.0;
+
 class PolarRingRemoval
 {
 public:
@@ -71,14 +82,11 @@ public:
                                 double maskRadiusRatio = 1.0);
 
     // Radius (pixels from the slice center) inside which the polar filter must leave the slice
-    // untouched, derived from the wavelet ring filter's mask settings: the wavelet filter skips
-    // the annulus [maskInnerRadius, maskOuterRadius) and the polar filter is meant to clean
-    // exactly that annulus, while the disc inside maskInnerRadius is left to the wavelet filter.
-    // Returns 0 (no exclusion) when the wavelet filter is off, no mask is set, or the inner
-    // radius is 0 (a solid protected disc). The polar transform is at its worst near r = 0 - a
-    // ring of vanishing radius has almost no pixels to average over, so the correction it
-    // estimates there smears into a starburst around the rotation axis - which is why the center
-    // is excluded rather than filtered.
+    // untouched. Always 0 now. It used to be the wavelet filter's protected-mask inner radius,
+    // because the polar filter produced a starburst around the rotation axis; the azimuthal window
+    // is now widened near the axis (kPolarMinAzimuthalArcPx) so that no longer happens, and
+    // excluding the disc just left the rings the wavelet filter does not remove there (a visible
+    // "gap" around the center). Kept so the callers' restore_center() calls stay valid no-ops.
     static int centerExclusionRadius(bool waveletFilterEnabled, int maskInnerRadius, int maskOuterRadius);
 
     // Restores every pixel of `corrected` closer than innerRadius to the slice center
