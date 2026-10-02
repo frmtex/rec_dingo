@@ -137,6 +137,13 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->doubleSpinBox_circMask, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
             [this](double) { refresh_preview_overlay(); });
 
+    // Unticking it frees whatever slices the last run left in RAM (the histogram then falls back
+    // to sampling reco/ from disk).
+    connect(ui->checkBox_keepSlicesInRam, &QCheckBox::toggled, this, [this](bool keep) {
+        if (!keep)
+            inmemoryRecoCache_ = InMemoryRecoCache();
+    });
+
     // Live-redraw the mask overlay on whichever preview slice is showing when these change,
     // without needing to recompute the preview itself.
     connect(ui->spinBox_ringMaskInnerRadius, QOverload<int>::of(&QSpinBox::valueChanged), this,
@@ -280,6 +287,7 @@ void MainWindow::slotFileOpen()
         ui->comboBox_fbpFilter->setCurrentIndex(getInt("fbp_filter", 3));
         ui->comboBox_algorithm->setCurrentIndex(getInt("recon_algorithm", 0));
         ui->doubleSpinBox_circMask->setValue(getDouble("circ_mask_ratio", 0.99));
+        ui->checkBox_keepSlicesInRam->setChecked(getBool("keep_slices_in_ram", false));
     }
 
     openImage();
@@ -609,6 +617,7 @@ void MainWindow::saveSettingsIni() const
     lines << QString("fbp_filter=%1").arg(ui->comboBox_fbpFilter->currentIndex());
     lines << QString("recon_algorithm=%1").arg(ui->comboBox_algorithm->currentIndex());
     lines << QString("circ_mask_ratio=%1").arg(ui->doubleSpinBox_circMask->value(), 0, 'g', 10);
+    lines << QString("keep_slices_in_ram=%1").arg(ui->checkBox_keepSlicesInRam->isChecked() ? 1 : 0);
 
     QFile outFile(path);
     if (!outFile.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate))
@@ -668,6 +677,7 @@ ReconstructionWorker::Params MainWindow::buildReconstructionParams()
     default: params.algorithm = ReconstructionWorker::ReconAlgorithm::Fbp; break;
     }
     params.circMaskRatio = ui->doubleSpinBox_circMask->value();
+    params.keepSlicesInRam = ui->checkBox_keepSlicesInRam->isChecked();
     params.binning = ui->comboBox_binning->currentIndex() + 1;
 
     if (ui->checkBox_useAngleFile->isChecked()) {
@@ -728,7 +738,7 @@ void MainWindow::slot_run_reconstruction()
     connect(inmemory_worker, &InMemoryPipelineWorker::finished, this, [this]() {
         // inmemory_worker is still alive here (deleteLater() below only runs once the event loop
         // gets back around to it) - grab its RAM-resident output before it's gone.
-        if (inmemory_worker) {
+        if (inmemory_worker && !inmemory_worker->reconstructedSlices().empty()) {
             inmemoryRecoCache_.valid = true;
             inmemoryRecoCache_.workingPath = workingpath;
             inmemoryRecoCache_.slices = inmemory_worker->reconstructedSlices();

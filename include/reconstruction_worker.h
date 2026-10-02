@@ -95,6 +95,10 @@ public:
         ReconAlgorithm algorithm = ReconAlgorithm::Fbp;
         FbpFilterType fbpFilter = FbpFilterType::Hamming; // ramp/window filter type, used by both algorithms
         double circMaskRatio = 0.995;
+        // InMemoryPipelineWorker only: also keep every reconstructed slice in RAM (see
+        // InMemoryPipelineWorker::reconstructedSlices()). Off by default - for a large scan that is
+        // tens of GB on top of everything else; reco/ is written either way.
+        bool keepSlicesInRam = false;
         // 1/2/3 = NxN block-average downsampling. The actual resizing happens inside
         // proj_correction (Proj_correction::setBinning), applied right after each image is read
         // and cropped - so it also speeds up spot filtering, flat-fielding, and phase retrieval,

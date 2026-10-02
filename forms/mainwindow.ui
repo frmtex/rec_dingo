@@ -1337,6 +1337,22 @@
        <string>Run Reconstruction</string>
       </property>
      </widget>
+     <widget class="QCheckBox" name="checkBox_keepSlicesInRam">
+      <property name="geometry">
+       <rect>
+        <x>680</x>
+        <y>347</y>
+        <width>460</width>
+        <height>20</height>
+       </rect>
+      </property>
+      <property name="toolTip">
+       <string>Keeps every reconstructed slice in RAM after Run Reconstruction so the Post Processing histogram can sample them without reading reco/ back from disk. This needs about (slice width x slice width x 4 bytes) x number of slices of extra RAM - e.g. ~36 GB for 601 slices of 3879 x 3879 - so leave it off unless the machine has plenty of RAM. reco/ is written either way, and when this is off the histogram simply samples reco/ from disk.</string>
+      </property>
+      <property name="text">
+       <string>Keep reconstructed slices in RAM (needs a lot of RAM)</string>
+      </property>
+     </widget>
      <widget class="QLabel" name="label_fbpFilter">
       <property name="geometry">
        <rect>

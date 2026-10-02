@@ -148,7 +148,9 @@ void InMemoryPipelineWorker::run()
 
         // Preallocated so each row thread below can write its own index without a lock - same
         // reasoning as sinograms[row] above, since threads claim disjoint row indices.
-        reconstructedSlices_.assign(static_cast<size_t>(n_rows), cv::Mat());
+        reconstructedSlices_.clear();
+        if (params_.keepSlicesInRam)
+            reconstructedSlices_.assign(static_cast<size_t>(n_rows), cv::Mat());
 
         std::atomic<int> nextRow{0};
         std::atomic<int> completedRows{0};
@@ -203,7 +205,8 @@ void InMemoryPipelineWorker::run()
                         PolarRingRemoval::restore_center(beforePolar, slice, polarCenterExclusion);
                     }
 
-                    reconstructedSlices_[static_cast<size_t>(row)] = slice;
+                    if (params_.keepSlicesInRam)
+                        reconstructedSlices_[static_cast<size_t>(row)] = slice;
 
                     QString outPath = recoDir + QString("reco_%1.tiff").arg(row, 5, 10, QChar('0'));
                     cv::imwrite(outPath.toStdString(), slice);

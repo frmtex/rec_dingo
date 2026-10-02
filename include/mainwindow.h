@@ -96,7 +96,9 @@ private:
     InMemoryPipelineWorker *inmemory_worker = nullptr;
 
     // The most recent in-memory run's reconstructed slices, kept around so a "Show histogram"
-    // click right afterward can sample them instead of reading reco/*.tiff back off disk. Cleared
+    // click right afterward can sample them instead of reading reco/*.tiff back off disk. Only
+    // populated when "Keep reconstructed slices in RAM" is ticked (it is a lot of RAM), and
+    // dropped when that is unticked. Cleared
     // (valid=false) whenever reco/ might no longer match: a fresh dataset loaded, or either
     // reconstruction path run again.
     struct InMemoryRecoCache
