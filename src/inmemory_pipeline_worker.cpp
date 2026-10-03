@@ -52,13 +52,19 @@ std::vector<double> InMemoryPipelineWorker::buildAngles() const
                                       std::to_string(params_.n_angles) + " angles");
         for (int a = 0; a < params_.n_angles; ++a)
             angles[a] = params_.anglesDeg[a] * M_PI / 180.0;
-        return angles;
+    } else {
+        for (int a = 0; a < params_.n_angles; ++a) {
+            double frac = (params_.n_angles > 1) ? static_cast<double>(a) / (params_.n_angles - 1) : 0.0;
+            double deg = params_.rotationStartDeg + params_.lastAngleDeg * frac;
+            angles[a] = deg * M_PI / 180.0;
+        }
     }
-    for (int a = 0; a < params_.n_angles; ++a) {
-        double frac = (params_.n_angles > 1) ? static_cast<double>(a) / (params_.n_angles - 1) : 0.0;
-        double deg = params_.rotationStartDeg + params_.lastAngleDeg * frac;
-        angles[a] = deg * M_PI / 180.0;
-    }
+    // Rotating the output about the rotation axis is just a constant offset on every projection
+    // angle: exact, with no interpolation of the reconstructed image. +offset turns the image
+    // clockwise on screen (checked against FBP and Gridrec).
+    const double offsetRad = params_.rotationDeg * M_PI / 180.0;
+    for (double& a : angles)
+        a += offsetRad;
     return angles;
 }
 
@@ -123,6 +129,17 @@ void InMemoryPipelineWorker::run()
         // reads its sinogram out of the in-RAM vector built in Stage 2 above. Different threads
         // claim different (unique) row indices, so concurrent access to different sinograms[row]
         // elements is safe - the same guarantee SinogramReader's per-file reads gave, just RAM-backed.
+        const bool cropOutput = params_.cropRect.isValid() && !params_.cropRect.isEmpty();
+        if (cropOutput && !QRect(0, 0, n_cols, n_cols).contains(params_.cropRect))
+            throw std::runtime_error("The crop ROI (" + std::to_string(params_.cropRect.x()) + ","
+                                      + std::to_string(params_.cropRect.y()) + " "
+                                      + std::to_string(params_.cropRect.width()) + "x"
+                                      + std::to_string(params_.cropRect.height())
+                                      + ") does not fit inside the " + std::to_string(n_cols) + " x "
+                                      + std::to_string(n_cols) + " reconstructed slice - set it again on a new preview, or clear it");
+        const cv::Rect cropRect = cropOutput
+            ? cv::Rect(params_.cropRect.x(), params_.cropRect.y(), params_.cropRect.width(), params_.cropRect.height())
+            : cv::Rect();
         std::unique_ptr<SliceReconstructor> recon = make_reconstructor(n_cols, params_);
         std::vector<double> angles = buildAngles();
 
@@ -204,6 +221,9 @@ void InMemoryPipelineWorker::run()
                         }
                         PolarRingRemoval::restore_center(beforePolar, slice, polarCenterExclusion);
                     }
+
+                    if (cropOutput)
+                        slice = slice(cropRect).clone(); // own the cropped data, not a view of the full slice
 
                     if (params_.keepSlicesInRam)
                         reconstructedSlices_[static_cast<size_t>(row)] = slice;

@@ -85,6 +85,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(ui->pushButton_addRoi, SIGNAL(clicked()), this, SLOT(slot_add_cor_roi()));
     connect(ui->pushButton_clearRoi, SIGNAL(clicked()), this, SLOT(slot_clear_cor_roi()));
+    connect(ui->pushButton_setCropRoi, SIGNAL(clicked()), this, SLOT(slot_set_crop_roi()));
+    connect(ui->pushButton_clearCropRoi, SIGNAL(clicked()), this, SLOT(slot_clear_crop_roi()));
     connect(ui->pushButton_findCor, SIGNAL(clicked()), this, SLOT(slot_find_cor()));
     connect(ui->pushButton_runReco, SIGNAL(clicked()), this, SLOT(slot_run_reconstruction()));
 
@@ -177,6 +179,10 @@ void MainWindow::slotFileOpen()
   {
     workingpath = fileName;
     inmemoryRecoCache_ = InMemoryRecoCache();
+    // Dataset-specific geometry - don't carry the previous dataset's crop/rotation over.
+    cropRoi_ = QRect();
+    ui->doubleSpinBox_rotation->setValue(0.0);
+    update_crop_label();
     QFile file(fileName);
     if ( !file.open(QIODevice::ReadOnly) ) {
     return;
@@ -288,6 +294,10 @@ void MainWindow::slotFileOpen()
         ui->comboBox_algorithm->setCurrentIndex(getInt("recon_algorithm", 0));
         ui->doubleSpinBox_circMask->setValue(getDouble("circ_mask_ratio", 0.99));
         ui->checkBox_keepSlicesInRam->setChecked(getBool("keep_slices_in_ram", false));
+        ui->doubleSpinBox_rotation->setValue(getDouble("rotation_deg", 0.0));
+        QRect crop(getInt("crop_x", 0), getInt("crop_y", 0), getInt("crop_w", 0), getInt("crop_h", 0));
+        cropRoi_ = (crop.width() > 0 && crop.height() > 0) ? crop : QRect();
+        update_crop_label();
     }
 
     openImage();
@@ -509,6 +519,55 @@ void MainWindow::slot_clear_cor_roi()
     statusBar()->showMessage(tr("CoR ROIs cleared"), 2000);
 }
 
+void MainWindow::slot_set_crop_roi()
+{
+    if (previewShownIndex_ < 0 || previewProcessed_.empty()) {
+        statusBar()->showMessage(tr("Show a preview slice first (Preview B/M/T), draw a rectangle on it, then click Set Crop ROI"), 5000);
+        return;
+    }
+    if (ui->graphicsView->rect_final.isEmpty()) {
+        statusBar()->showMessage(tr("Draw a rectangle on the preview slice with the mouse first"), 4000);
+        return;
+    }
+
+    // Clamped to the slice: the rectangle may have been dragged past the image edge.
+    QRect roi = ui->graphicsView->roiInImageCoords()
+                    .intersected(QRect(0, 0, previewProcessed_.cols, previewProcessed_.rows));
+    if (roi.width() < 2 || roi.height() < 2) {
+        statusBar()->showMessage(tr("The rectangle is outside the slice or too small"), 4000);
+        return;
+    }
+
+    cropRoi_ = roi;
+    update_crop_label();
+    refresh_preview_window(); // draw it on the preview
+    statusBar()->showMessage(tr("Crop ROI set: %1 x %2 pixels at (%3, %4)")
+                                  .arg(roi.width()).arg(roi.height()).arg(roi.x()).arg(roi.y()), 5000);
+}
+
+void MainWindow::slot_clear_crop_roi()
+{
+    cropRoi_ = QRect();
+    update_crop_label();
+    refresh_preview_window();
+    statusBar()->showMessage(tr("Crop ROI cleared - the whole slice will be saved"), 3000);
+}
+
+void MainWindow::update_crop_label()
+{
+    if (cropRoi_.isNull()) {
+        ui->label_cropRoi->setText(tr("Output crop: full slice"));
+        return;
+    }
+    QString text = tr("Output crop: %1 x %2 at (%3, %4)")
+                       .arg(cropRoi_.width()).arg(cropRoi_.height()).arg(cropRoi_.x()).arg(cropRoi_.y());
+    // Warn when it can't apply to the slice size currently previewed (binning/ROI changed since).
+    if (!previewProcessed_.empty()
+        && !QRect(0, 0, previewProcessed_.cols, previewProcessed_.rows).contains(cropRoi_))
+        text += tr(" - outside this slice!");
+    ui->label_cropRoi->setText(text);
+}
+
 void MainWindow::slot_find_cor()
 {
     if (!first_set) {
@@ -618,6 +677,11 @@ void MainWindow::saveSettingsIni() const
     lines << QString("recon_algorithm=%1").arg(ui->comboBox_algorithm->currentIndex());
     lines << QString("circ_mask_ratio=%1").arg(ui->doubleSpinBox_circMask->value(), 0, 'g', 10);
     lines << QString("keep_slices_in_ram=%1").arg(ui->checkBox_keepSlicesInRam->isChecked() ? 1 : 0);
+    lines << QString("rotation_deg=%1").arg(ui->doubleSpinBox_rotation->value(), 0, 'g', 10);
+    lines << QString("crop_x=%1").arg(cropRoi_.isNull() ? 0 : cropRoi_.x());
+    lines << QString("crop_y=%1").arg(cropRoi_.isNull() ? 0 : cropRoi_.y());
+    lines << QString("crop_w=%1").arg(cropRoi_.isNull() ? 0 : cropRoi_.width());
+    lines << QString("crop_h=%1").arg(cropRoi_.isNull() ? 0 : cropRoi_.height());
 
     QFile outFile(path);
     if (!outFile.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate))
@@ -678,6 +742,8 @@ ReconstructionWorker::Params MainWindow::buildReconstructionParams()
     }
     params.circMaskRatio = ui->doubleSpinBox_circMask->value();
     params.keepSlicesInRam = ui->checkBox_keepSlicesInRam->isChecked();
+    params.rotationDeg = ui->doubleSpinBox_rotation->value();
+    params.cropRect = cropRoi_;
     params.binning = ui->comboBox_binning->currentIndex() + 1;
 
     if (ui->checkBox_useAngleFile->isChecked()) {
@@ -979,13 +1045,28 @@ void MainWindow::renderPreviewWindow()
         painter.drawEllipse(center, rOuter, rOuter);
     }
 
+    if (!cropRoi_.isNull() && img.width() > 0
+        && QRect(0, 0, previewProcessed_.cols, previewProcessed_.rows).contains(cropRoi_)) {
+        // The output crop, drawn over the slice (same scale as the display downscale).
+        const double s = static_cast<double>(rgb.width()) / img.width();
+        QPainter painter(&rgb);
+        QPen pen(QColor(0, 220, 0));
+        pen.setWidth(2);
+        painter.setPen(pen);
+        painter.drawRect(QRectF(cropRoi_.x() * s, cropRoi_.y() * s, cropRoi_.width() * s, cropRoi_.height() * s));
+    }
+    update_crop_label();
+
     disableDisplayHistogram();
     if (scene)
         scene->clear();
     scene = new QGraphicsScene(this);
     scene->addPixmap(QPixmap::fromImage(rgb));
     ui->graphicsView->resetRoi();
+    ui->graphicsView->rect_final = QRectF(); // a rectangle drawn on some earlier image is not an ROI on this one
     ui->graphicsView->setScene(scene);
+    // Lets Set Crop ROI convert the rectangle drawn on this (downscaled) display back to slice pixels.
+    ui->graphicsView->setDisplayedImageSize(rgb.size(), QSize(previewProcessed_.cols, previewProcessed_.rows));
     ui->graphicsView->show();
 }
 

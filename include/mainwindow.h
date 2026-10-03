@@ -47,6 +47,8 @@ public slots:
 
     void slot_add_cor_roi();
     void slot_clear_cor_roi();
+    void slot_set_crop_roi();
+    void slot_clear_crop_roi();
     void slot_find_cor();
     void slot_run_reconstruction();
     void slot_run_preview();
@@ -150,6 +152,11 @@ private:
     // previewShownIndex_ is -1 whenever the view shows something other than a preview slice.
     cv::Mat previewProcessed_;
     int previewShownIndex_ = -1;
+
+    // Output crop (pixels of the rotated, full reconstructed slice shown in the preview): only this
+    // rectangle of every slice is written to reco/. Null = keep the whole slice.
+    QRect cropRoi_;
+    void update_crop_label();
     // Gray-level window for the preview: the Post Processing histogram's range if one is loaded
     // (exactly what the 16-bit conversion will clip to), else the Clip % percentiles of this slice
     // while 16-bit conversion is enabled, else a plain 1st/99th percentile auto-contrast.

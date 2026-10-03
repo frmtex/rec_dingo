@@ -63,13 +63,19 @@ std::vector<double> ReconstructionWorker::buildAngles() const
                                       std::to_string(params_.n_angles) + " angles");
         for (int a = 0; a < params_.n_angles; ++a)
             angles[a] = params_.anglesDeg[a] * M_PI / 180.0;
-        return angles;
+    } else {
+        for (int a = 0; a < params_.n_angles; ++a) {
+            double frac = (params_.n_angles > 1) ? static_cast<double>(a) / (params_.n_angles - 1) : 0.0;
+            double deg = params_.rotationStartDeg + params_.lastAngleDeg * frac;
+            angles[a] = deg * M_PI / 180.0;
+        }
     }
-    for (int a = 0; a < params_.n_angles; ++a) {
-        double frac = (params_.n_angles > 1) ? static_cast<double>(a) / (params_.n_angles - 1) : 0.0;
-        double deg = params_.rotationStartDeg + params_.lastAngleDeg * frac;
-        angles[a] = deg * M_PI / 180.0;
-    }
+    // Rotating the output about the rotation axis is just a constant offset on every projection
+    // angle: exact, with no interpolation of the reconstructed image. +offset turns the image
+    // clockwise on screen (checked against FBP and Gridrec).
+    const double offsetRad = params_.rotationDeg * M_PI / 180.0;
+    for (double& a : angles)
+        a += offsetRad;
     return angles;
 }
 
