@@ -1,4 +1,5 @@
 #include "ring_removal_polar_cuda.h"
+#include "ring_removal_polar.h"
 #include <cuda_runtime.h>
 #include <cmath>
 #include <mutex>
@@ -28,6 +29,17 @@ __device__ inline int bandedKernelRadius(int col, int polW, int design)
     if (col < b1) return design / 3;
     if (col < b2) return (2 * design) / 3;
     return design;
+}
+
+// Same widening as ring_removal_polar.cpp's azimuthalKernelRadius (see kPolarMinAzimuthalArcPx).
+__device__ inline int azimuthalKernelRadius(int col, int polW, int polH, int design)
+{
+    int kr = bandedKernelRadius(col, polW, design);
+    double radius = col > 1 ? col : 1;
+    int arcKr = static_cast<int>(ceil(kPolarMinAzimuthalArcPx * polH / (4.0 * M_PI * radius)));
+    int needed = kr > arcKr ? kr : arcKr;
+    int limit = (polH - 1) / 2;
+    return needed < limit ? needed : limit;
 }
 
 __global__ void polarTransformKernel(const float* cartesianIn, int rows, int cols,
@@ -112,28 +124,30 @@ __device__ inline int reflectIndex(int idx, int polH)
     return idx;
 }
 
+// One thread per column (radius), sliding the window down the angle axis: the near-axis windows
+// can span the whole circle, so a per-pixel loop over the window would be far too slow.
 __global__ void azimuthalMeanKernel(const float* diff, int polH, int polW, int design,
                                      bool wrapBoundary, float* outEstimate)
 {
     int c = blockIdx.x * blockDim.x + threadIdx.x;
-    int a = blockIdx.y * blockDim.y + threadIdx.y;
-    if (a >= polH || c >= polW)
+    if (c >= polW)
         return;
 
-    float self = diff[a * polW + c];
-    if (self == 0.0f) {
-        outEstimate[a * polW + c] = 0.0f;
-        return;
-    }
-    int kr = bandedKernelRadius(c, polW, design);
-    int windowSize = 2 * kr + 1;
-    double sum = 0.0;
-    for (int k = -kr; k <= kr; ++k) {
-        int idx = a + k;
+    const int kr = azimuthalKernelRadius(c, polW, polH, design);
+    const int windowSize = 2 * kr + 1;
+    auto rowValue = [&](int idx) {
         idx = wrapBoundary ? ((idx % polH) + polH) % polH : reflectIndex(idx, polH);
-        sum += diff[idx * polW + c];
+        return static_cast<double>(diff[idx * polW + c]);
+    };
+
+    double sum = 0.0;
+    for (int k = -kr; k <= kr; ++k)
+        sum += rowValue(k); // window for a = 0
+    for (int a = 0; a < polH; ++a) {
+        outEstimate[a * polW + c] =
+            (diff[a * polW + c] == 0.0f) ? 0.0f : static_cast<float>(sum / windowSize);
+        sum += rowValue(a + 1 + kr) - rowValue(a - kr); // slide to a + 1
     }
-    outEstimate[a * polW + c] = static_cast<float>(sum / windowSize);
 }
 
 __global__ void inversePolarTransformKernel(const float* ringEstimatePolar, int polH, int polW,
@@ -258,8 +272,8 @@ cv::Mat PolarRingCudaBackend::remove_ring(const cv::Mat& slice, double thresh, d
     CUDA_CHECK(cudaGetLastError());
 
     const int m_azi = static_cast<int>(std::floor(impl.polH_ / 360.0 * thetaMinDeg));
-    azimuthalMeanKernel<<<polarGrid, block>>>(impl.d_diff_, impl.polH_, impl.polW_, m_azi, wrapBoundary,
-                                               impl.d_ringEstimatePolar_);
+    azimuthalMeanKernel<<<dim3(static_cast<unsigned>((impl.polW_ + 63) / 64)), dim3(64)>>>(
+        impl.d_diff_, impl.polH_, impl.polW_, m_azi, wrapBoundary, impl.d_ringEstimatePolar_);
     CUDA_CHECK(cudaGetLastError());
 
     dim3 cartGrid = grid2d(impl.cols_, impl.rows_, block);

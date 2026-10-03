@@ -98,6 +98,16 @@ public:
         FbpFilterType fbpFilter = FbpFilterType::Hamming; // ramp/window filter type, used by both algorithms
         double circMaskRatio = 0.995;
         int chunkRows = 128;
+        // Rotates the reconstructed image about the rotation axis (the slice center), in degrees,
+        // clockwise as displayed - implemented as a constant added to every projection angle, so it
+        // is exact (no resampling). Applies to the preview as well as the full run, so the preview
+        // shows the orientation that will be written.
+        double rotationDeg = 0.0;
+        // ReconstructionWorker::run() only: when valid, only this rectangle (in pixels of the
+        // reconstructed n_cols x n_cols slice, after rotation and ring removal) is kept in the
+        // reco/ files, so the output takes less disk space. A null/empty rect = the whole
+        // slice. Not applied to the preview, which always shows the full slice.
+        QRect cropRect;
         // 1/2/3 = NxN block-average downsampling. The actual resizing happens inside
         // proj_correction (Proj_correction::setBinning), applied right after each image is read
         // and cropped - so it also speeds up spot filtering, flat-fielding, and phase retrieval,

@@ -74,13 +74,19 @@ std::vector<double> ReconstructionWorker::buildAngles() const
                                       std::to_string(params_.n_angles) + " angles");
         for (int a = 0; a < params_.n_angles; ++a)
             angles[a] = params_.anglesDeg[a] * M_PI / 180.0;
-        return angles;
+    } else {
+        for (int a = 0; a < params_.n_angles; ++a) {
+            double frac = (params_.n_angles > 1) ? static_cast<double>(a) / (params_.n_angles - 1) : 0.0;
+            double deg = params_.rotationStartDeg + params_.lastAngleDeg * frac;
+            angles[a] = deg * M_PI / 180.0;
+        }
     }
-    for (int a = 0; a < params_.n_angles; ++a) {
-        double frac = (params_.n_angles > 1) ? static_cast<double>(a) / (params_.n_angles - 1) : 0.0;
-        double deg = params_.rotationStartDeg + params_.lastAngleDeg * frac;
-        angles[a] = deg * M_PI / 180.0;
-    }
+    // Rotating the output about the rotation axis is just a constant offset on every projection
+    // angle: exact, with no interpolation of the reconstructed image. +offset turns the image
+    // clockwise on screen (checked against FBP and Gridrec).
+    const double offsetRad = params_.rotationDeg * M_PI / 180.0;
+    for (double& a : angles)
+        a += offsetRad;
     return angles;
 }
 
@@ -141,6 +147,17 @@ void ReconstructionWorker::run()
 
         // --- Stage 2/3: read each sinogram back, shift to CoR, ring-filter, FBP, write slice. ---
         SinogramReader reader(sinoDir, n_rows);
+        const bool cropOutput = params_.cropRect.isValid() && !params_.cropRect.isEmpty();
+        if (cropOutput && !QRect(0, 0, n_cols, n_cols).contains(params_.cropRect))
+            throw std::runtime_error("The crop ROI (" + std::to_string(params_.cropRect.x()) + ","
+                                      + std::to_string(params_.cropRect.y()) + " "
+                                      + std::to_string(params_.cropRect.width()) + "x"
+                                      + std::to_string(params_.cropRect.height())
+                                      + ") does not fit inside the " + std::to_string(n_cols) + " x "
+                                      + std::to_string(n_cols) + " reconstructed slice - set it again on a new preview, or clear it");
+        const cv::Rect cropRect = cropOutput
+            ? cv::Rect(params_.cropRect.x(), params_.cropRect.y(), params_.cropRect.width(), params_.cropRect.height())
+            : cv::Rect();
         std::unique_ptr<SliceReconstructor> recon = make_reconstructor(n_cols, params_);
         std::vector<double> angles = buildAngles();
 
@@ -242,6 +259,8 @@ void ReconstructionWorker::run()
                     }
 
                     QString outPath = recoDir + QString("reco_%1.tiff").arg(row, 5, 10, QChar('0'));
+                    if (cropOutput)
+                        slice = slice(cropRect).clone(); // own the cropped data, not a view of the full slice
                     cv::imwrite(outPath.toStdString(), slice);
 
                     int done = completedRows.fetch_add(1) + 1;

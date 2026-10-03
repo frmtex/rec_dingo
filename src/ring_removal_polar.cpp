@@ -143,11 +143,23 @@ cv::Mat radialMedianFilter(const cv::Mat& polar, int design, bool parallel)
     return out;
 }
 
+// Azimuthal kernel radius (in rows) for column `col`: the banded radius derived from thetaMinDeg,
+// widened as needed to span kPolarMinAzimuthalArcPx, and never more than a full circle.
+int azimuthalKernelRadius(int col, int polW, int polH, int design)
+{
+    int kr = bandedKernelRadius(col, polW, design);
+    double radius = std::max(1, col);
+    int arcKr = static_cast<int>(std::ceil(kPolarMinAzimuthalArcPx * polH / (4.0 * M_PI * radius)));
+    return std::min(std::max(kr, arcKr), (polH - 1) / 2);
+}
+
 // Mean-filters `diff` across rows (angle) independently for each column (radius), with a kernel
-// radius that grows in three radius bands. Boundary handling is circular (wrapBoundary) or mirror
-// reflection otherwise. A pixel whose own value is exactly 0 (rejected by the threshold step
-// upstream) stays 0 rather than picking up a neighbor-derived estimate - only pixels that survived
-// thresholding get smoothed/reinforced into a ring estimate.
+// radius that grows in three radius bands and is widened near the axis (see
+// azimuthalKernelRadius). Boundary handling is circular (wrapBoundary) or mirror reflection
+// otherwise. A pixel whose own value is exactly 0 (rejected by the threshold step upstream) stays
+// 0 rather than picking up a neighbor-derived estimate - only pixels that survived thresholding
+// get smoothed/reinforced into a ring estimate. Window sums come from a prefix sum over the
+// boundary-extended column, so the cost no longer grows with the (now much wider) kernel.
 cv::Mat azimuthalMeanFilter(const cv::Mat& diff, int design, bool wrapBoundary, bool parallel)
 {
     const int polH = diff.rows, polW = diff.cols;
@@ -162,23 +174,26 @@ cv::Mat azimuthalMeanFilter(const cv::Mat& diff, int design, bool wrapBoundary, 
     };
 
     parallelFor(polW, parallel, [&](int c) {
-        int kr = bandedKernelRadius(c, polW, design);
-        int windowSize = 2 * kr + 1;
+        const int kr = azimuthalKernelRadius(c, polW, polH, design);
+        const int windowSize = 2 * kr + 1;
+        // prefix[i] = sum of the boundary-extended column's first i entries, where extended index
+        // j (0 .. polH + 2*kr - 1) corresponds to row j - kr.
+        std::vector<double> prefix(static_cast<size_t>(polH + 2 * kr) + 1, 0.0);
+        for (int j = 0; j < polH + 2 * kr; ++j) {
+            int idx = j - kr;
+            if (wrapBoundary)
+                idx = ((idx % polH) + polH) % polH;
+            else
+                idx = reflectIndex(idx);
+            prefix[static_cast<size_t>(j) + 1] = prefix[static_cast<size_t>(j)] + diff.at<float>(idx, c);
+        }
         for (int a = 0; a < polH; ++a) {
-            float self = diff.at<float>(a, c);
-            if (self == 0.0f) {
+            if (diff.at<float>(a, c) == 0.0f) {
                 out.at<float>(a, c) = 0.0f;
                 continue;
             }
-            double sum = 0.0;
-            for (int k = -kr; k <= kr; ++k) {
-                int idx = a + k;
-                if (wrapBoundary)
-                    idx = ((idx % polH) + polH) % polH;
-                else
-                    idx = reflectIndex(idx);
-                sum += diff.at<float>(idx, c);
-            }
+            // Rows a-kr .. a+kr are extended entries a .. a+2*kr.
+            double sum = prefix[static_cast<size_t>(a + windowSize)] - prefix[static_cast<size_t>(a)];
             out.at<float>(a, c) = static_cast<float>(sum / windowSize);
         }
     });
@@ -230,11 +245,9 @@ cv::Mat PolarRingRemoval::remove_ring(const cv::Mat& slice, double thresh, doubl
     return corrected;
 }
 
-int PolarRingRemoval::centerExclusionRadius(bool waveletFilterEnabled, int maskInnerRadius, int maskOuterRadius)
+int PolarRingRemoval::centerExclusionRadius(bool, int, int)
 {
-    if (waveletFilterEnabled && maskOuterRadius > maskInnerRadius && maskOuterRadius > 0 && maskInnerRadius > 0)
-        return maskInnerRadius;
-    return 0;
+    return 0; // see the declaration - the wavelet-mask exclusion is no longer needed
 }
 
 void PolarRingRemoval::restore_center(const cv::Mat& original, cv::Mat& corrected, int innerRadius)

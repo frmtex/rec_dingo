@@ -548,6 +548,92 @@
        <double>45.000000000000000</double>
       </property>
      </widget>
+     <widget class="QLabel" name="label_rotation">
+      <property name="geometry">
+       <rect>
+        <x>690</x>
+        <y>30</y>
+        <width>105</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="toolTip">
+       <string>Rotates the reconstructed image about the rotation axis, clockwise as displayed. Exact (no resampling): it is added to every projection angle. Press Preview B/M/T to see it; Run Reconstruction writes the rotated slices.</string>
+      </property>
+      <property name="text">
+       <string>Rotate (deg cw)</string>
+      </property>
+     </widget>
+     <widget class="QDoubleSpinBox" name="doubleSpinBox_rotation">
+      <property name="geometry">
+       <rect>
+        <x>800</x>
+        <y>25</y>
+        <width>85</width>
+        <height>25</height>
+       </rect>
+      </property>
+      <property name="toolTip">
+       <string>Rotates the reconstructed image about the rotation axis, clockwise as displayed. Exact (no resampling): it is added to every projection angle. Press Preview B/M/T to see it; Run Reconstruction writes the rotated slices.</string>
+      </property>
+      <property name="decimals">
+       <number>2</number>
+      </property>
+      <property name="minimum">
+       <double>-180.000000000000000</double>
+      </property>
+      <property name="maximum">
+       <double>180.000000000000000</double>
+      </property>
+      <property name="singleStep">
+       <double>0.500000000000000</double>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="pushButton_setCropRoi">
+      <property name="geometry">
+       <rect>
+        <x>690</x>
+        <y>55</y>
+        <width>120</width>
+        <height>28</height>
+       </rect>
+      </property>
+      <property name="toolTip">
+       <string>Draw a rectangle on the preview slice with the mouse, then click this to keep only that part of every reconstructed slice in reco/ (and in RAM) - this reduces the disk space needed. The rectangle is in the rotated slice shown in the preview.</string>
+      </property>
+      <property name="text">
+       <string>Set Crop ROI</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="pushButton_clearCropRoi">
+      <property name="geometry">
+       <rect>
+        <x>815</x>
+        <y>55</y>
+        <width>90</width>
+        <height>28</height>
+       </rect>
+      </property>
+      <property name="toolTip">
+       <string>Go back to saving the whole reconstructed slice.</string>
+      </property>
+      <property name="text">
+       <string>Clear Crop</string>
+      </property>
+     </widget>
+     <widget class="QLabel" name="label_cropRoi">
+      <property name="geometry">
+       <rect>
+        <x>910</x>
+        <y>60</y>
+        <width>225</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>Output crop: full slice</string>
+      </property>
+     </widget>
      <widget class="QRadioButton" name="radioButton_corAuto">
       <property name="geometry">
        <rect>
