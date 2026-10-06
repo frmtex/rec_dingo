@@ -79,6 +79,21 @@ private:
     QImage scaledImage; // Grayscale16, always the raw (un-windowed) pixel data - see showScaledImage()
     QRect rect_roi_final;
 
+    // Geometric distortion correction, switched on in settings.ini (see readDistortionSettings()):
+    // graph-paper images in <dataset>/grid/ (like ob/ and di/) are fitted when the first set is
+    // loaded, and every frame the pipeline reads is resampled with the result.
+    bool distortionEnabled_ = false;
+    int distortionDegree_ = 4;
+    QString distortionDir_ = "grid";
+    int distortionRotate_ = 0;      // degrees clockwise applied to the grid images to match the scans
+    bool distortionFlip_ = false;   // flip the grid images' rows (bottom-up FITS)
+    void readDistortionSettings();
+    // Fits (or reuses the previous fit of) the grid images; throws std::exception with a message
+    // for the user on failure.
+    std::shared_ptr<const DistortionCorrection> loadDistortionCorrection();
+    std::shared_ptr<const DistortionCorrection> distortionCache_;
+    QString distortionCacheKey_;
+
     std::vector<cv::Rect> cor_rois;
     double cor_offset = 0.0;
     double tilt_deg = 0.0;

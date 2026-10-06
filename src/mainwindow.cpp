@@ -14,6 +14,11 @@
 #include <QSignalBlocker>
 #include <QMap>
 #include <QFile>
+#include <QDir>
+#include <QFileInfo>
+#include <QDateTime>
+#include <QMessageBox>
+#include <QApplication>
 #include <QTextStream>
 #include <algorithm>
 #include <stdexcept>
@@ -231,6 +236,8 @@ void MainWindow::slotFileOpen()
     if (QFile::exists(defaultAngleFile))
         ui->lineEdit_angleFile->setText(defaultAngleFile);
 
+    readDistortionSettings();
+
     // If this settings.ini was previously updated by saveSettingsIni() (see there for the sentinel
     // format), restore the reconstruction settings it recorded - lets a sinogram or corrected-
     // projection dataset be reloaded later and reconstructed again with the same starting point,
@@ -409,19 +416,107 @@ void MainWindow::update_view()
 
 }
 
+// Keys written anywhere in settings.ini: one the user wrote above the auto-generated section
+// takes precedence over the generated copy (see saveSettingsIni()), so a hand edit always works.
+void MainWindow::readDistortionSettings()
+{
+    static const QString kSettingsSentinel =
+        "# rec_dingo settings (auto-generated below - safe to delete, will be regenerated)";
+    const int sentinelIdx = steuerelemente.indexOf(kSettingsSentinel);
+    auto lookup = [&](const QString& key, const QString& def) {
+        const QString prefix = key + "=";
+        QString value = def;
+        const int generatedFrom = sentinelIdx >= 0 ? sentinelIdx + 1 : steuerelemente.size();
+        for (int i = generatedFrom; i < steuerelemente.size(); ++i)
+            if (steuerelemente.at(i).startsWith(prefix)) value = steuerelemente.at(i).mid(prefix.size()).trimmed();
+        const int userEnd = sentinelIdx >= 0 ? sentinelIdx : steuerelemente.size();
+        for (int i = 0; i < userEnd; ++i)
+            if (steuerelemente.at(i).startsWith(prefix)) value = steuerelemente.at(i).mid(prefix.size()).trimmed();
+        return value;
+    };
+    distortionEnabled_ = lookup("distortion_correction", "0").toInt() != 0;
+    distortionDir_ = lookup("distortion_grid_dir", "grid");
+    if (distortionDir_.isEmpty()) distortionDir_ = "grid";
+    distortionDegree_ = std::clamp(lookup("distortion_poly_degree", "4").toInt(), 1, 8);
+    distortionRotate_ = ((lookup("distortion_grid_rotate", "0").toInt() % 360) + 360) % 360;
+    distortionFlip_ = lookup("distortion_grid_flip", "0").toInt() != 0;
+}
+
+std::shared_ptr<const DistortionCorrection> MainWindow::loadDistortionCorrection()
+{
+    const QString dir = QDir::isAbsolutePath(distortionDir_) ? distortionDir_ : workingpath + "/" + distortionDir_;
+
+    // The fit takes a few seconds; reloading the same set shouldn't repeat it. The key covers the
+    // settings and every file's name, size and time.
+    QString key = QString("%1|%2|%3|%4").arg(dir).arg(distortionDegree_).arg(distortionRotate_).arg(distortionFlip_);
+    const QFileInfoList files = QDir(dir).entryInfoList(QDir::Files | QDir::NoDotAndDotDot, QDir::Name);
+    for (const QFileInfo& fi : files)
+        key += QString("|%1:%2:%3").arg(fi.fileName()).arg(fi.size()).arg(fi.lastModified().toMSecsSinceEpoch());
+    if (distortionCache_ && key == distortionCacheKey_)
+        return distortionCache_;
+
+    struct WaitCursor {
+        WaitCursor() { QApplication::setOverrideCursor(Qt::WaitCursor); }
+        ~WaitCursor() { QApplication::restoreOverrideCursor(); }
+    } wait;
+    statusBar()->showMessage(tr("Fitting the distortion correction to the images in %1 ...").arg(dir));
+    QApplication::processEvents();
+
+    const std::vector<cv::Mat> images = DistortionCorrection::loadGridImages(dir, distortionRotate_, distortionFlip_);
+    DistortionCorrection::Options options;
+    options.polyDegree = distortionDegree_;
+    DistortionCorrection::Report report;
+    std::shared_ptr<const DistortionCorrection> correction;
+    try {
+        correction = DistortionCorrection::fit(images, options, &report);
+    } catch (const std::exception& e) {
+        throw std::runtime_error(std::string("Distortion correction could not be fitted to the images in ")
+                                 + dir.toStdString() + ":\n" + e.what());
+    }
+
+    distortionCache_ = correction;
+    distortionCacheKey_ = key;
+    const QString summary = report.summary();
+    statusBar()->showMessage(summary, 20000);
+    qInfo().noquote() << summary;
+    QFile out(dir + "/distortion_report.txt"); // a record next to the images, best effort
+    if (out.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate))
+        out.write((summary + "\n").toUtf8());
+    return correction;
+}
+
 void MainWindow::slot_First_Set()
 {
     // Loading a fresh Proj_correction changes the ob/di flat-field data underneath any
     // previously-cached preview sinograms, even if their key fields still match.
     preview_sino_cache = ReconstructionWorker::PreviewCache();
 
-    first_set = new Proj_correction();
-    first_set->setData(workingpath,rect_roi_final);
-    first_set->setSpotKernelSize(spot_kernel_size_from_ui());
-    first_set->setBinning(ui->comboBox_binning->currentIndex() + 1);
-    first_set->setUseGpu(ui->checkBox_useGpuProjCorrection->isChecked());
-    first_set->load_op_di();
-    first_set->get_first_image_corr();
+    // Everything that can fail with a message the user can act on (a missing or unusable grid
+    // folder, grid images that don't match the scan frames) happens before first_set is replaced,
+    // so a failure leaves the previous state untouched.
+    Proj_correction* fresh = nullptr;
+    try {
+        std::shared_ptr<const DistortionCorrection> distortion;
+        if (distortionEnabled_)
+            distortion = loadDistortionCorrection();
+
+        fresh = new Proj_correction();
+        fresh->setData(workingpath,rect_roi_final);
+        fresh->setSpotKernelSize(spot_kernel_size_from_ui());
+        fresh->setBinning(ui->comboBox_binning->currentIndex() + 1);
+        fresh->setUseGpu(ui->checkBox_useGpuProjCorrection->isChecked());
+        fresh->setDistortionCorrection(distortion);
+        fresh->load_op_di();
+        fresh->get_first_image_corr();
+    } catch (const std::exception& e) {
+        delete fresh;
+        QApplication::restoreOverrideCursor();
+        QMessageBox::critical(this, tr("Load first set"),
+                              tr("%1\n\nTo continue without the geometric distortion correction set "
+                                 "distortion_correction=0 in settings.ini.").arg(QString::fromUtf8(e.what())));
+        return;
+    }
+    first_set = fresh;
 
     scaledImage = fitGray16(first_set->im_show, 600, 800);
     ui->graphicsView->setDisplayedImageSize(scaledImage.size(), QSize(first_set->im_show.cols, first_set->im_show.rows));
@@ -644,6 +739,12 @@ void MainWindow::saveSettingsIni() const
     int sentinelIdx = lines.indexOf(kSettingsSentinel);
     if (sentinelIdx >= 0)
         lines = lines.mid(0, sentinelIdx);
+    // distortion_* keys a user wrote by hand above the sentinel were read at load time
+    // (readDistortionSettings()) and are rewritten below from the current values - drop the
+    // originals so the generated section stays the single, editable copy.
+    lines.erase(std::remove_if(lines.begin(), lines.end(),
+                               [](const QString& l) { return l.startsWith("distortion_"); }),
+                lines.end());
 
     lines << kSettingsSentinel;
     lines << QString("roi_x=%1").arg(rect_roi_final.x());
@@ -677,6 +778,13 @@ void MainWindow::saveSettingsIni() const
     lines << QString("recon_algorithm=%1").arg(ui->comboBox_algorithm->currentIndex());
     lines << QString("circ_mask_ratio=%1").arg(ui->doubleSpinBox_circMask->value(), 0, 'g', 10);
     lines << QString("keep_slices_in_ram=%1").arg(ui->checkBox_keepSlicesInRam->isChecked() ? 1 : 0);
+    // Distortion correction (no widgets - switched on by editing these lines): see
+    // readDistortionSettings().
+    lines << QString("distortion_correction=%1").arg(distortionEnabled_ ? 1 : 0);
+    lines << QString("distortion_grid_dir=%1").arg(distortionDir_);
+    lines << QString("distortion_poly_degree=%1").arg(distortionDegree_);
+    lines << QString("distortion_grid_rotate=%1").arg(distortionRotate_);
+    lines << QString("distortion_grid_flip=%1").arg(distortionFlip_ ? 1 : 0);
     lines << QString("rotation_deg=%1").arg(ui->doubleSpinBox_rotation->value(), 0, 'g', 10);
     lines << QString("crop_x=%1").arg(cropRoi_.isNull() ? 0 : cropRoi_.x());
     lines << QString("crop_y=%1").arg(cropRoi_.isNull() ? 0 : cropRoi_.y());

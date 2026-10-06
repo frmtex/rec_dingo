@@ -6,6 +6,8 @@
 #include <functional>
 #include <memory>
 #include <vector>
+#include <mutex>
+#include "distortion_correction.h"
 #if !defined(__APPLE__)
 #include "spot_filter_cuda.h"
 #include "phase_retrieval_cuda.h"
@@ -49,6 +51,18 @@ public:
     // as im_show / get_projection_corr()'s output (post-crop, post-binning) - re-pick after
     // changing binning. Throws std::runtime_error if roi is empty or projection 0 can't be read.
     void setIntensityRoi(const QRect& roi);
+    // Geometric distortion correction (see distortion_correction.h): when set, every frame -
+    // projections, flats and darks alike - is read from a slightly larger area than the ROI and,
+    // after spot filtering and flat-fielding, resampled onto the undistorted pixel grid, so the
+    // corrected projection covers exactly the ROI (in corrected-image coordinates) as before. Spot
+    // filtering deliberately runs before the resampling so single hot pixels aren't smeared over
+    // several pixels first. Set before load_op_di(); pass nullptr to switch it off.
+    void setDistortionCorrection(std::shared_ptr<const DistortionCorrection> correction)
+    {
+        distortion_ = std::move(correction);
+        distortion_roi_valid = false;
+        clearCorrectedScan(); // anything cached by correctScan() has the old geometry
+    }
     void load_op_di();
     void get_first_image_corr();
     // Computes the fully-corrected (spot filter + flat field + intensity correction + phase
@@ -96,6 +110,23 @@ private:
     // (fullResRoi.width/binning, fullResRoi.height/binning). fullResRoi is always in the
     // original, unbinned image's coordinates.
     cv::Mat read_cropped_binned(const QString& filename, const cv::Rect& fullResRoi) const;
+
+    // Area read from disk for every frame: the ROI itself, or - with a distortion correction - the
+    // ROI grown by what the resampling needs (see DistortionCorrection::requiredSourceRect).
+    cv::Rect workRoi() const;
+    // Resamples a flat-fielded frame covering workRoi() (binned) onto the corrected pixel grid of
+    // the ROI; returns `img` unchanged without a distortion correction.
+    cv::Mat undistort(const cv::Mat& img);
+
+    std::shared_ptr<const DistortionCorrection> distortion_;
+    // Remap table for the current roi_rect/binning, built on first use and rebuilt if either changes.
+    std::mutex distortion_mutex;
+    bool distortion_roi_valid = false;
+    QRect distortion_roi;
+    int distortion_binning = 1;
+    cv::Rect distortion_src;
+    cv::Mat distortion_map;
+    void prepareDistortion();
 
     bool use_gpu = false;
 #if !defined(__APPLE__)

@@ -124,9 +124,52 @@ std::vector<float> Proj_correction::applyPhaseRetrieval(const std::vector<float>
     return phase_retrieval(image, nx, ny, alpha, pix);
 }
 
+void Proj_correction::prepareDistortion()
+{
+    std::lock_guard<std::mutex> lock(distortion_mutex);
+    if (!distortion_) return;
+    if (distortion_roi_valid && distortion_roi == roi_rect && distortion_binning == binning)
+        return;
+    const cv::Rect roi(roi_rect.x(), roi_rect.y(), roi_rect.width(), roi_rect.height());
+    distortion_src = distortion_->requiredSourceRect(roi, binning);
+    distortion_map = distortion_->buildRemap(roi, distortion_src, binning);
+    distortion_roi = roi_rect;
+    distortion_binning = binning;
+    distortion_roi_valid = true;
+}
+
+cv::Rect Proj_correction::workRoi() const
+{
+    if (!distortion_)
+        return cv::Rect(roi_rect.x(), roi_rect.y(), roi_rect.width(), roi_rect.height());
+    // const_cast: only fills the lazily built cache, which is guarded by its own mutex.
+    const_cast<Proj_correction*>(this)->prepareDistortion();
+    return distortion_src;
+}
+
+cv::Mat Proj_correction::undistort(const cv::Mat& img)
+{
+    if (!distortion_)
+        return img;
+    prepareDistortion();
+    const int b = std::max(1, binning);
+    if (img.cols != distortion_src.width / b || img.rows != distortion_src.height / b)
+        throw std::runtime_error("Proj_correction::undistort: frame size does not match the distortion "
+                                 "correction's source area (ROI or binning changed after load - reload the first set)");
+    cv::Mat out;
+    cv::remap(img, out, distortion_map, cv::noArray(), cv::INTER_LINEAR, cv::BORDER_REPLICATE);
+    return out;
+}
+
 cv::Mat Proj_correction::read_cropped_binned(const QString& filename, const cv::Rect& fullResRoi) const
 {
     cv::Mat img_1 = cv::imread(filename.toStdString(), cv::IMREAD_UNCHANGED);
+    if (distortion_ && !img_1.empty() && img_1.size() != distortion_->frameSize())
+        throw std::runtime_error(("Distortion correction was measured on " + std::to_string(distortion_->frameSize().width)
+                                  + " x " + std::to_string(distortion_->frameSize().height) + " images but "
+                                  + filename.toStdString() + " is " + std::to_string(img_1.cols) + " x "
+                                  + std::to_string(img_1.rows) + " - rotate the grid images to match (distortion_grid_rotate "
+                                  "in settings.ini) or switch the correction off").c_str());
     cv::Mat img_roi = img_1(fullResRoi);
     if (binning <= 1)
         return img_roi;
@@ -143,9 +186,7 @@ void Proj_correction::load_op_di()
     QDir ob_dir = ob_path, di_dir = di_path;
     QStringList ob_list =  ob_dir.entryList(QDir::Files | QDir::NoDotAndDotDot);
     QStringList di_list =  di_dir.entryList(QDir::Files | QDir::NoDotAndDotDot);
-    int x,y,h,w;
-    roi_rect.getRect(&x,&y,&w,&h);
-    cv::Rect roi(x,y,w,h);
+    const cv::Rect roi = workRoi(); // the ROI, or a bit more when a distortion correction is active
     int kernel_size = spot_kernel_size;
 
     std::vector<cv::Mat> images;
@@ -237,9 +278,7 @@ cv::Mat Proj_correction::get_projection_corr(int index)
     QString proj_path = data_path + "/scan/";
     QDir proj_dir = proj_path;
     QStringList proj_list =  proj_dir.entryList(QDir::Files | QDir::NoDotAndDotDot);
-    int x,y,h,w;
-    roi_rect.getRect(&x,&y,&w,&h);
-    cv::Rect roi(x,y,w,h);
+    const cv::Rect roi = workRoi();
 
     int kernel_size = spot_kernel_size;
 
@@ -250,6 +289,7 @@ cv::Mat Proj_correction::get_projection_corr(int index)
     cv::Mat im_out;
     img_roi.convertTo(im_out, CV_32FC1);
     im_out = (im_out - di_corr)/(ob_corr-di_corr);
+    im_out = undistort(im_out);
 
     // Beam-intensity fluctuation correction: rescale so this projection's own mean in the
     // beam-only ROI matches the reference established from projection 0 in setIntensityRoi().
@@ -277,7 +317,7 @@ cv::Mat Proj_correction::get_projection_corrected_full(int index)
 
     int x, y, h, w;
     roi_rect.getRect(&x, &y, &w, &h);
-    cv::Rect roi(x, y, w, h); // full-resolution crop rect; read_cropped_binned bins after cropping
+    cv::Rect roi = workRoi(); // full-resolution crop rect (grown for a distortion correction); read_cropped_binned bins after cropping
     if (binning > 1) { w /= binning; h /= binning; } // padding/reshape math below works in binned size
 
     QString filename = proj_path + proj_list.at(index);
@@ -287,6 +327,7 @@ cv::Mat Proj_correction::get_projection_corrected_full(int index)
     cv::Mat im_out;
     img_roi.convertTo(im_out, CV_32FC1);
     im_out = (im_out - di_corr) / (ob_corr - di_corr);
+    im_out = undistort(im_out);
 
     // Beam-intensity fluctuation correction - see get_projection_corr() for details; kept in
     // sync with it so this matches what get_projection_corr() would return for the same index.
