@@ -81,7 +81,8 @@ SOURCES += \
     src/reconstruction_worker.cpp \
     src/post_process_worker.cpp \
     src/angle_file_reader.cpp \
-    src/corr_scan_worker.cpp
+    src/corr_scan_worker.cpp \
+    src/distortion_correction.cpp
 
 HEADERS += \
     include/customview.h \
@@ -101,7 +102,8 @@ HEADERS += \
     include/post_process_worker.h \
     include/beam_hardening.h \
     include/angle_file_reader.h \
-    include/corr_scan_worker.h
+    include/corr_scan_worker.h \
+    include/distortion_correction.h
 
 FORMS += \
     forms/mainwindow.ui
