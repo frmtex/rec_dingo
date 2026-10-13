@@ -273,6 +273,42 @@ void Proj_correction::setIntensityRoi(const QRect& roi)
     clearCorrectedScan();
 }
 
+int Proj_correction::projectionCount() const
+{
+    const int files = QDir(data_path + "/scan/").entryList(QDir::Files | QDir::NoDotAndDotDot).size();
+    if (files % repeats != 0)
+        throw std::runtime_error("scan/ holds " + std::to_string(files) + " files, which is not a multiple of "
+                                 "repeats=" + std::to_string(repeats) + " (frames per angle)");
+    return files / repeats;
+}
+
+cv::Mat Proj_correction::read_projection(const QString& scanDir, const QStringList& files, int index,
+                                         const cv::Rect& roi)
+{
+    const int first = index * repeats;
+    if (index < 0 || first + repeats > files.size())
+        throw std::runtime_error("projection " + std::to_string(index) + " needs frames " + std::to_string(first)
+                                 + ".." + std::to_string(first + repeats - 1) + " (repeats=" + std::to_string(repeats)
+                                 + ") but scan/ holds only " + std::to_string(files.size()) + " files");
+
+    if (repeats == 1) {
+        cv::Mat img = read_cropped_binned(scanDir + files.at(first), roi);
+        applySpotCorrection(img, spot_kernel_size, 200);
+        return img;
+    }
+
+    cv::Mat sum;
+    for (int r = 0; r < repeats; ++r) {
+        cv::Mat img = read_cropped_binned(scanDir + files.at(first + r), roi);
+        applySpotCorrection(img, spot_kernel_size, 200); // per frame: a hot pixel in one repeat must not survive the average
+        cv::Mat f;
+        img.convertTo(f, CV_32FC1);
+        if (sum.empty()) sum = f; else sum += f;
+    }
+    sum /= static_cast<double>(repeats);
+    return sum;
+}
+
 cv::Mat Proj_correction::get_projection_corr(int index)
 {
     QString proj_path = data_path + "/scan/";
@@ -280,11 +316,7 @@ cv::Mat Proj_correction::get_projection_corr(int index)
     QStringList proj_list =  proj_dir.entryList(QDir::Files | QDir::NoDotAndDotDot);
     const cv::Rect roi = workRoi();
 
-    int kernel_size = spot_kernel_size;
-
-    QString filename = proj_path + proj_list.at(index);
-    cv::Mat img_roi = read_cropped_binned(filename, roi);
-    applySpotCorrection(img_roi, kernel_size, 200);
+    cv::Mat img_roi = read_projection(proj_path, proj_list, index, roi);
 
     cv::Mat im_out;
     img_roi.convertTo(im_out, CV_32FC1);
@@ -320,9 +352,7 @@ cv::Mat Proj_correction::get_projection_corrected_full(int index)
     cv::Rect roi = workRoi(); // full-resolution crop rect (grown for a distortion correction); read_cropped_binned bins after cropping
     if (binning > 1) { w /= binning; h /= binning; } // padding/reshape math below works in binned size
 
-    QString filename = proj_path + proj_list.at(index);
-    cv::Mat img_roi = read_cropped_binned(filename, roi);
-    applySpotCorrection(img_roi, spot_kernel_size, 200);
+    cv::Mat img_roi = read_projection(proj_path, proj_list, index, roi);
 
     cv::Mat im_out;
     img_roi.convertTo(im_out, CV_32FC1);
@@ -380,12 +410,13 @@ void Proj_correction::correctScan(const std::function<void(int, int)>& progressC
     QDir proj_dir = proj_path;
     QStringList proj_list =  proj_dir.entryList(QDir::Files | QDir::NoDotAndDotDot);
 
-    std::vector<cv::Mat> corrected(static_cast<size_t>(proj_list.size()));
-    for (int i = 0; i < proj_list.size(); ++i) {
+    const int projections = projectionCount(); // files / repeats (throws if not a multiple)
+    std::vector<cv::Mat> corrected(static_cast<size_t>(projections));
+    for (int i = 0; i < projections; ++i) {
         corrected[static_cast<size_t>(i)] = get_projection_corrected_full(i);
 
         if (progressCallback)
-            progressCallback(i + 1, proj_list.size());
+            progressCallback(i + 1, projections);
     }
     correctedProjections_ = std::move(corrected);
 

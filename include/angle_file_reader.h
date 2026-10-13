@@ -15,4 +15,9 @@
 // indices have gaps.
 std::vector<double> readAnglesFromSicsFile(const QString& path);
 
+// For repeats > 1: `perFrame` holds one reading per frame (see above); returns one per projection,
+// the mean of each group of `repeats` consecutive frames (taken relative to the group's first
+// reading so the 360/0 wrap can't distort it). Size must be a multiple of repeats.
+std::vector<double> averageAngleRepeats(const std::vector<double>& perFrame, int repeats);
+
 #endif // ANGLE_FILE_READER_H
