@@ -2,6 +2,7 @@
 #include <QFile>
 #include <QTextStream>
 #include <QRegularExpression>
+#include <cmath>
 #include <map>
 #include <stdexcept>
 
@@ -36,4 +37,25 @@ std::vector<double> readAnglesFromSicsFile(const QString& path)
     for (const auto& [index, angle] : anglesByIndex)
         angles[index] = angle;
     return angles;
+}
+
+std::vector<double> averageAngleRepeats(const std::vector<double>& perFrame, int repeats)
+{
+    if (repeats <= 1)
+        return perFrame;
+    if (perFrame.size() % static_cast<size_t>(repeats) != 0)
+        throw std::runtime_error("number of angle readings is not a multiple of repeats");
+    std::vector<double> out(perFrame.size() / static_cast<size_t>(repeats));
+    for (size_t a = 0; a < out.size(); ++a) {
+        const double first = perFrame[a * repeats];
+        double diff = 0.0;
+        for (int r = 1; r < repeats; ++r) {
+            double d = perFrame[a * repeats + r] - first;
+            d = std::fmod(d + 180.0, 360.0);
+            if (d < 0) d += 360.0;
+            diff += d - 180.0;
+        }
+        out[a] = first + diff / repeats;
+    }
+    return out;
 }

@@ -214,7 +214,7 @@ void MainWindow::slotFileOpen()
     iniline = steuerelemente.at(4);
     iniline.remove("repeats=");
     ui->label_repeats->setText(iniline);
-    repeats = iniline.toInt();
+    repeats = std::max(1, iniline.toInt()); // frames per angle (consecutive files in scan/)
 
     iniline = steuerelemente.at(5);
     iniline.remove("pixel_size=");
@@ -496,6 +496,17 @@ void MainWindow::slot_First_Set()
         fresh->setSpotKernelSize(spot_kernel_size_from_ui());
         fresh->setBinning(ui->comboBox_binning->currentIndex() + 1);
         fresh->setUseGpu(ui->checkBox_useGpuProjCorrection->isChecked());
+        fresh->setRepeats(repeats);
+        if (repeats > 1) {
+            // projectionCount() also rejects a file count that isn't a multiple of repeats.
+            const int projections = fresh->projectionCount();
+            if (projections != angles)
+                throw std::runtime_error(
+                    QString("scan/ holds %1 files = %2 projections at repeats=%3, but settings.ini says "
+                            "angles=%4 (expected %5 files)")
+                        .arg(projections * repeats).arg(projections).arg(repeats).arg(angles)
+                        .arg(angles * repeats).toStdString());
+        }
         fresh->setDistortionCorrection(distortion);
         fresh->load_op_di();
         fresh->get_first_image_corr();
@@ -537,6 +548,7 @@ void MainWindow::slot_corr_scan()
     first_set->setSpotKernelSize(spot_kernel_size_from_ui());
     first_set->setBinning(ui->comboBox_binning->currentIndex() + 1);
     first_set->setUseGpu(ui->checkBox_useGpuProjCorrection->isChecked());
+    first_set->setRepeats(repeats);
 
     ui->pushButton_corr_scan->setEnabled(false);
     ui->progressBar_reco->setValue(0);
@@ -794,6 +806,7 @@ ReconstructionWorker::Params MainWindow::buildReconstructionParams()
     // Re-apply in case the spot-filter window or binning was changed after "Load first set" ran.
     first_set->setSpotKernelSize(spot_kernel_size_from_ui());
     first_set->setBinning(ui->comboBox_binning->currentIndex() + 1);
+    first_set->setRepeats(repeats);
 
     ReconstructionWorker::Params params;
     params.workingPath = workingpath;
@@ -847,11 +860,16 @@ ReconstructionWorker::Params MainWindow::buildReconstructionParams()
     if (ui->checkBox_useAngleFile->isChecked()) {
         try {
             params.anglesDeg = readAnglesFromSicsFile(ui->lineEdit_angleFile->text());
+            // The log has one reading per frame; with repeats > 1 the frames of one angle are
+            // averaged, like the images.
+            if (repeats > 1 && static_cast<int>(params.anglesDeg.size()) == params.n_angles * repeats)
+                params.anglesDeg = averageAngleRepeats(params.anglesDeg, repeats);
             if (static_cast<int>(params.anglesDeg.size()) != params.n_angles)
                 throw std::runtime_error(
-                    QString("file has %1 angles, expected %2")
+                    QString("file has %1 readings, expected %2 (angles) or %3 (angles x repeats)")
                         .arg(params.anglesDeg.size())
                         .arg(params.n_angles)
+                        .arg(params.n_angles * repeats)
                         .toStdString());
             params.useAngleFile = true;
         } catch (const std::exception& e) {

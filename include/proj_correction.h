@@ -36,6 +36,14 @@ public:
     // so there this is a harmless no-op and applySpotCorrection/applyPhaseRetrieval always take the
     // CPU path regardless of the flag - same pattern as ReconstructionWorker's polar ring GPU path.
     void setUseGpu(bool useGpu) { use_gpu = useGpu; }
+    // Frames taken per projection angle (settings.ini "repeats="). The frames of one angle are
+    // consecutive files in scan/ (sorted by name); each is spot-filtered on its own and the
+    // frames are then averaged - the same signal-to-noise as summing them, but still on the scale
+    // of the flat and dark fields, which are single-frame averages. 1 = one frame per angle.
+    void setRepeats(int r) { repeats = r < 1 ? 1 : r; }
+    // Number of projections (angles) available in scan/: file count / repeats. Throws if the file
+    // count isn't a multiple of repeats.
+    int projectionCount() const;
     // Region of the corrected (cropped/binned) image containing only the primary beam, no sample -
     // used to correct for beam-intensity fluctuation over the course of a scan. Immediately reads
     // and corrects projection 0 to establish the reference mean; every projection returned by
@@ -74,6 +82,12 @@ private:
     QRect roi_rect;
     int spot_kernel_size = 5;
     int binning = 1;
+    int repeats = 1;
+
+    // The frame(s) of projection `index` from the sorted scan/ listing `files`, cropped/binned to
+    // `roi`, spot-filtered, and - with repeats > 1 - averaged (CV_32FC1); with one frame per angle
+    // the spot-filtered image is returned as read.
+    cv::Mat read_projection(const QString& scanDir, const QStringList& files, int index, const cv::Rect& roi);
 
     QRect intensity_roi;
     bool intensity_roi_enabled = false;
