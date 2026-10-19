@@ -1,6 +1,6 @@
 # rec_dingo
 
-A Qt6 desktop application for reconstructing X-ray computed tomography (CT) scans using
+A Qt6 desktop application for reconstructing neutron computed tomography (CT) scans using
 filtered backprojection (FBP), with GPU-accelerated reconstruction on NVIDIA hardware via CUDA.
 
 ## Features
