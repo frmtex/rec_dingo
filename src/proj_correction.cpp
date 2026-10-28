@@ -130,6 +130,9 @@ void Proj_correction::prepareDistortion()
     if (!distortion_) return;
     if (distortion_roi_valid && distortion_roi == roi_rect && distortion_binning == binning)
         return;
+    if (roi_rect.width() < binning || roi_rect.height() < binning)
+        throw std::runtime_error("no ROI selected - draw a region on the first image and click Get ROI before "
+                                 "loading the first set");
     const cv::Rect roi(roi_rect.x(), roi_rect.y(), roi_rect.width(), roi_rect.height());
     distortion_src = distortion_->requiredSourceRect(roi, binning);
     distortion_map = distortion_->buildRemap(roi, distortion_src, binning);

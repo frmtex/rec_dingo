@@ -455,10 +455,8 @@ std::shared_ptr<const DistortionCorrection> MainWindow::loadDistortionCorrection
     if (distortionCache_ && key == distortionCacheKey_)
         return distortionCache_;
 
-    struct WaitCursor {
-        WaitCursor() { QApplication::setOverrideCursor(Qt::WaitCursor); }
-        ~WaitCursor() { QApplication::restoreOverrideCursor(); }
-    } wait;
+    // No busy cursor here: QApplication::setOverrideCursor(Qt::WaitCursor) crashes in Qt 6.11 on
+    // macOS 27 (CoreGraphics rejects the colour space of the image Qt builds for that cursor).
     statusBar()->showMessage(tr("Fitting the distortion correction to the images in %1 ...").arg(dir));
     QApplication::processEvents();
 
@@ -521,7 +519,6 @@ void MainWindow::slot_First_Set()
         fresh->get_first_image_corr();
     } catch (const std::exception& e) {
         delete fresh;
-        QApplication::restoreOverrideCursor();
         QMessageBox::critical(this, tr("Load first set"),
                               tr("%1\n\nTo continue without the geometric distortion correction set "
                                  "distortion_correction=0 in settings.ini.").arg(QString::fromUtf8(e.what())));
