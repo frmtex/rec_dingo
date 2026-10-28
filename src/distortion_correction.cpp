@@ -418,13 +418,32 @@ std::shared_ptr<const DistortionCorrection> DistortionCorrection::fit(const std:
     bg.release();
     avg.release();
 
-    double pitch = estimatePitch(flat);
-    std::vector<Crossing> pts = detectCrossings(flat, pitch);
-    Lattice lat = indexLattice(pts, flat.size(), pitch);
-    if (std::abs(lat.pitch - pitch) > 0.2 * pitch) { // first guess was off (e.g. a harmonic): redo with the measured one
-        pts = detectCrossings(flat, lat.pitch);
-        lat = indexLattice(pts, flat.size(), lat.pitch);
+    // The strongest periodic component of the image is usually the grid pitch, but thin lines on a
+    // coarse grid have strong harmonics too (the FFT then reports pitch/2, pitch/3, ...). So try
+    // the estimate and its small integer multiples, and take the first that yields a consistent
+    // lattice: crossings found at that scale whose measured spacing agrees with it.
+    const double basePitch = estimatePitch(flat);
+    std::vector<Crossing> pts;
+    Lattice lat;
+    bool found = false;
+    std::string lastError;
+    for (int multiple = 1; multiple <= 6 && !found; ++multiple) {
+        const double guess = basePitch * multiple;
+        if (guess > 0.1 * std::min(flat.cols, flat.rows))
+            break; // fewer than ~10 cells across the frame - not a usable grid
+        try {
+            pts = detectCrossings(flat, guess);
+            lat = indexLattice(pts, flat.size(), guess);
+        } catch (const std::exception& e) {
+            lastError = e.what();
+            continue;
+        }
+        found = lat.ij.size() >= 100 && std::abs(lat.pitch - guess) <= 0.2 * guess;
+        if (!found && lastError.empty())
+            lastError = "the detected crossings do not form a regular grid";
     }
+    if (!found)
+        throw std::runtime_error(lastError.empty() ? std::string("no regular grid found") : lastError);
     flat.release();
     const size_t N = lat.ij.size();
     if (N < 100)
