@@ -5,6 +5,9 @@ CONFIG += c++20
 
 macx {
     QMAKE_MACOSX_DEPLOYMENT_TARGET = 26
+    # Qt only knows the SDK of the macOS it was tested on and warns about a newer one every time
+    # qmake runs; the build itself is fine, so don't show the warning.
+    CONFIG += sdk_no_version_check
     # Homebrew's opencv@4 is keg-only (not symlinked into /opt/homebrew), so it isn't on
     # pkg-config's default search path the way the Linux build's link_pkgconfig expects -
     # link against it directly instead.
